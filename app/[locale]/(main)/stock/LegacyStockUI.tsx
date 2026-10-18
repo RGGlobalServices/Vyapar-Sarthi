@@ -702,11 +702,11 @@ export default function LegacyStockUI() {
         <div className="flex gap-2">
           <button onClick={() => openModal('in')}
             className="bg-emerald-500 text-slate-900 px-3 md:px-4 py-2 rounded-xl flex items-center gap-1.5 hover:bg-emerald-400 transition-colors font-bold text-sm shadow-sm shadow-emerald-500/20">
-            <ArrowDownLeft size={16} /><span className="hidden sm:inline">{t('stockIn')}</span><span className="sm:hidden">In</span>
+            <ArrowDownLeft size={16} />{t('stockIn')}
           </button>
           <button onClick={() => openModal('out')}
             className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-red-500 dark:text-red-400 px-3 md:px-4 py-2 rounded-xl flex items-center gap-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors font-bold text-sm">
-            <ArrowUpRight size={16} /><span className="hidden sm:inline">{t('stockOut')}</span><span className="sm:hidden">Out</span>
+            <ArrowUpRight size={16} />{t('stockOut')}
           </button>
         </div>
       </div>

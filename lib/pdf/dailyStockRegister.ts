@@ -48,7 +48,7 @@ export function groupDailyStockRegisterRows(rows: DailyStockRegisterRow[], isLiq
   const categoryOrder: string[] = [];
   const byCategory = new Map<string, Map<string, DailyStockRegisterRow[]>>();
   for (const r of rows) {
-    const category = (r.category || 'Other').trim() || 'Other';
+    const category = ((r.category || 'Other').trim() || 'Other').toUpperCase();
     const volume = isLiquor ? extractVolumeLabel(r.name) : null;
     if (!byCategory.has(category)) { byCategory.set(category, new Map()); categoryOrder.push(category); }
     const volumeMap = byCategory.get(category)!;
@@ -67,7 +67,7 @@ export function groupDailyStockRegisterRows(rows: DailyStockRegisterRow[], isLiq
       return parseFloat(b) - parseFloat(a);
     });
     for (const volumeKey of volumeKeys) {
-      const label = volumeKey ? `${category.toUpperCase()} ${volumeKey}` : category.toUpperCase();
+      const label = volumeKey ? `${category} ${volumeKey}` : category;
       result.push({ label, rows: volumeMap.get(volumeKey)! });
     }
   }

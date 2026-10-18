@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
@@ -164,24 +164,24 @@ function SalesTab({ filters }: { filters: any }) {
 
       {subTab === 'overview' && data?.trend && (
         <SectionCard title={t('section.revenueProfitTrend')}
-          actions={<ExportButton columns={[{ key: 'date', label: 'Date' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }]} data={data.trend} filename="sales_trend" />}>
+          actions={<ExportButton columns={[{ key: 'date', label: t('col.date') }, { key: 'revenue', label: t('col.revenue'), type: 'currency' }, { key: 'profit', label: t('col.profit'), type: 'currency' }]} data={data.trend} filename="sales_trend" />}>
           <DrillDownChart type="area" data={data.trend} xKey="date"
-            yKeys={[{ key: 'revenue', label: 'Revenue', color: '#10b981' }, { key: 'profit', label: 'Profit', color: '#3b82f6' }]} height={300} />
+            yKeys={[{ key: 'revenue', label: t('col.revenue'), color: '#10b981' }, { key: 'profit', label: t('col.profit'), color: '#3b82f6' }]} height={300} />
         </SectionCard>
       )}
 
       {subTab === 'products' && byProduct?.rows && (
         <SectionCard title={t('section.salesByProduct')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'revenue', label: 'Revenue', type: 'currency' as const }, { key: 'profit', label: 'Profit', type: 'currency' as const }, { key: 'qty', label: 'Qty', type: 'number' as const }]} data={byProduct.rows} filename="sales_by_product" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: t('col.product') }, { key: 'category', label: t('col.category') }, ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop') }] : []), { key: 'revenue', label: t('col.revenue'), type: 'currency' as const }, { key: 'profit', label: t('col.profit'), type: 'currency' as const }, { key: 'qty', label: t('col.qty'), type: 'number' as const }]} data={byProduct.rows} filename="sales_by_product" />}>
           <ReportTable
             columns={[
-              { key: 'name', label: 'Product', sortable: true },
-              { key: 'category', label: 'Category', type: 'badge', sortable: true },
-              ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
-              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
-              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
-              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+              { key: 'name', label: t('col.product'), sortable: true },
+              { key: 'category', label: t('col.category'), type: 'badge', sortable: true },
+              ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop'), sortable: true }] : []),
+              { key: 'revenue', label: t('col.revenue'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: t('col.qtySold'), type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: t('col.bills'), type: 'number', sortable: true, align: 'right' },
             ]}
             rows={byProduct.rows} maxHeight="480px" />
         </SectionCard>
@@ -191,15 +191,15 @@ function SalesTab({ filters }: { filters: any }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title={t('section.revenueByCategory')}>
             <DrillDownChart type="pie" data={byCategory.rows.slice(0, 8)} xKey="category"
-              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+              yKeys={[{ key: 'revenue', label: t('col.revenue') }]} height={280} />
           </SectionCard>
           <SectionCard title={t('section.categoryBreakdown')}
-            actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }]} data={byCategory.rows} filename="sales_by_category" />}>
+            actions={<ExportButton columns={[{ key: 'category', label: t('col.category') }, { key: 'revenue', label: t('col.revenue'), type: 'currency' }, { key: 'qty', label: t('col.qty'), type: 'number' }]} data={byCategory.rows} filename="sales_by_category" />}>
             <ReportTable columns={[
-              { key: 'category', label: 'Category', sortable: true },
-              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
-              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-              { key: 'qty', label: 'Units', type: 'number', sortable: true, align: 'right' },
+              { key: 'category', label: t('col.category'), sortable: true },
+              { key: 'revenue', label: t('col.revenue'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: t('col.units'), type: 'number', sortable: true, align: 'right' },
             ]} rows={byCategory.rows} maxHeight="280px" />
           </SectionCard>
         </div>
@@ -209,17 +209,17 @@ function SalesTab({ filters }: { filters: any }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title={t('section.revenueByBrand')}>
             <DrillDownChart type="pie" data={byBrand.rows.slice(0, 8)} xKey="brand"
-              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+              yKeys={[{ key: 'revenue', label: t('col.revenue') }]} height={280} />
           </SectionCard>
           <SectionCard title={t('section.brandWiseSales')}
-            actions={<ExportButton columns={[{ key: 'brand', label: 'Brand' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }, { key: 'sku_count', label: 'SKUs', type: 'number' }]} data={byBrand.rows} filename="sales_by_brand" />}>
+            actions={<ExportButton columns={[{ key: 'brand', label: t('col.brand') }, { key: 'revenue', label: t('col.revenue'), type: 'currency' }, { key: 'profit', label: t('col.profit'), type: 'currency' }, { key: 'qty', label: t('col.qty'), type: 'number' }, { key: 'sku_count', label: t('col.skus'), type: 'number' }]} data={byBrand.rows} filename="sales_by_brand" />}>
             <ReportTable columns={[
-              { key: 'brand', label: 'Brand', sortable: true },
-              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
-              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
-              { key: 'sku_count', label: 'SKUs', type: 'number', sortable: true, align: 'right' },
-              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+              { key: 'brand', label: t('col.brand'), sortable: true },
+              { key: 'revenue', label: t('col.revenue'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: t('col.qtySold'), type: 'number', sortable: true, align: 'right' },
+              { key: 'sku_count', label: t('col.skus'), type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: t('col.bills'), type: 'number', sortable: true, align: 'right' },
             ]} rows={byBrand.rows} maxHeight="480px" />
           </SectionCard>
         </div>
@@ -229,17 +229,17 @@ function SalesTab({ filters }: { filters: any }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title={t('section.revenueByCompany')}>
             <DrillDownChart type="pie" data={byCompany.rows.slice(0, 8)} xKey="company"
-              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={280} />
+              yKeys={[{ key: 'revenue', label: t('col.revenue') }]} height={280} />
           </SectionCard>
           <SectionCard title={t('section.companySales')}
-            actions={<ExportButton columns={[{ key: 'company', label: 'Company' }, { key: 'revenue', label: 'Revenue', type: 'currency' }, { key: 'profit', label: 'Profit', type: 'currency' }, { key: 'qty', label: 'Qty', type: 'number' }, { key: 'sku_count', label: 'SKUs', type: 'number' }]} data={byCompany.rows} filename="sales_by_company" />}>
+            actions={<ExportButton columns={[{ key: 'company', label: t('col.company') }, { key: 'revenue', label: t('col.revenue'), type: 'currency' }, { key: 'profit', label: t('col.profit'), type: 'currency' }, { key: 'qty', label: t('col.qty'), type: 'number' }, { key: 'sku_count', label: t('col.skus'), type: 'number' }]} data={byCompany.rows} filename="sales_by_company" />}>
             <ReportTable columns={[
-              { key: 'company', label: 'Company', sortable: true },
-              { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
-              { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-              { key: 'qty', label: 'Qty Sold', type: 'number', sortable: true, align: 'right' },
-              { key: 'sku_count', label: 'SKUs', type: 'number', sortable: true, align: 'right' },
-              { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+              { key: 'company', label: t('col.company'), sortable: true },
+              { key: 'revenue', label: t('col.revenue'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'qty', label: t('col.qtySold'), type: 'number', sortable: true, align: 'right' },
+              { key: 'sku_count', label: t('col.skus'), type: 'number', sortable: true, align: 'right' },
+              { key: 'bill_count', label: t('col.bills'), type: 'number', sortable: true, align: 'right' },
             ]} rows={byCompany.rows} maxHeight="480px" />
           </SectionCard>
         </div>
@@ -247,14 +247,14 @@ function SalesTab({ filters }: { filters: any }) {
 
       {subTab === 'customers' && byCustomer?.rows && (
         <SectionCard title={t('section.topCustomers')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, { key: 'total_spent', label: 'Total Spent', type: 'currency' }, { key: 'outstanding', label: 'Outstanding', type: 'currency' }]} data={byCustomer.rows} filename="sales_by_customer" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: t('col.customer') }, { key: 'mobile', label: t('col.mobile') }, { key: 'total_spent', label: t('col.totalSpent'), type: 'currency' }, { key: 'outstanding', label: t('col.outstanding'), type: 'currency' }]} data={byCustomer.rows} filename="sales_by_customer" />}>
           <ReportTable columns={[
-            { key: 'name', label: 'Customer', sortable: true },
-            { key: 'mobile', label: 'Mobile' },
-            { key: 'total_spent', label: 'Total Spent', type: 'currency', sortable: true, align: 'right' },
-            { key: 'contributed_profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-            { key: 'bill_count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
-            { key: 'outstanding', label: 'Outstanding', type: 'currency', sortable: true, align: 'right' },
+            { key: 'name', label: t('col.customer'), sortable: true },
+            { key: 'mobile', label: t('col.mobile') },
+            { key: 'total_spent', label: t('col.totalSpent'), type: 'currency', sortable: true, align: 'right' },
+            { key: 'contributed_profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+            { key: 'bill_count', label: t('col.bills'), type: 'number', sortable: true, align: 'right' },
+            { key: 'outstanding', label: t('col.outstanding'), type: 'currency', sortable: true, align: 'right' },
           ]} rows={byCustomer.rows} maxHeight="480px" />
         </SectionCard>
       )}
@@ -263,16 +263,16 @@ function SalesTab({ filters }: { filters: any }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionCard title={t('section.collectionByMode')}>
             <DrillDownChart type="pie" data={byPayment.rows} xKey="method"
-              yKeys={[{ key: 'revenue', label: 'Revenue' }]} height={260} />
+              yKeys={[{ key: 'revenue', label: t('col.revenue') }]} height={260} />
           </SectionCard>
           <SectionCard
             title={t('section.paymentBreakdown')}
             actions={<ExportButton
               columns={[
-                { key: 'method', label: 'Method' },
-                { key: 'revenue', label: 'Billed', type: 'currency' },
-                { key: 'collected', label: 'Collected', type: 'currency' },
-                { key: 'count', label: 'Bills', type: 'number' },
+                { key: 'method', label: t('col.method') },
+                { key: 'revenue', label: t('col.billed'), type: 'currency' },
+                { key: 'collected', label: t('col.collected'), type: 'currency' },
+                { key: 'count', label: t('col.bills'), type: 'number' },
               ]}
               data={byPayment.rows}
               filename="payment_mode_breakdown"
@@ -280,10 +280,10 @@ function SalesTab({ filters }: { filters: any }) {
             />}
           >
             <ReportTable columns={[
-              { key: 'method', label: 'Method', type: 'badge' },
-              { key: 'revenue', label: 'Billed', type: 'currency', sortable: true, align: 'right' },
-              { key: 'collected', label: 'Collected', type: 'currency', sortable: true, align: 'right' },
-              { key: 'count', label: 'Bills', type: 'number', sortable: true, align: 'right' },
+              { key: 'method', label: t('col.method'), type: 'badge' },
+              { key: 'revenue', label: t('col.billed'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'collected', label: t('col.collected'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'count', label: t('col.bills'), type: 'number', sortable: true, align: 'right' },
             ]} rows={byPayment.rows} />
           </SectionCard>
         </div>
@@ -300,11 +300,11 @@ function SalesTab({ filters }: { filters: any }) {
             title={t('section.gstSummary')}
             actions={gstReport?.rows?.length ? <ExportButton
               columns={[
-                { key: 'gst_rate', label: 'GST Rate %', type: 'number' },
-                { key: 'taxable_value', label: 'Taxable Value', type: 'currency' },
-                { key: 'cgst', label: 'CGST', type: 'currency' },
-                { key: 'sgst', label: 'SGST', type: 'currency' },
-                { key: 'gst_amount', label: 'Total GST', type: 'currency' },
+                { key: 'gst_rate', label: t('col.gstRate'), type: 'number' },
+                { key: 'taxable_value', label: t('col.taxableValue'), type: 'currency' },
+                { key: 'cgst', label: t('col.cgst'), type: 'currency' },
+                { key: 'sgst', label: t('col.sgst'), type: 'currency' },
+                { key: 'gst_amount', label: t('col.totalGst'), type: 'currency' },
               ]}
               data={gstReport.rows}
               filename="gst_summary"
@@ -313,11 +313,11 @@ function SalesTab({ filters }: { filters: any }) {
           >
             {gstReport?.rows?.length ? (
               <ReportTable columns={[
-                { key: 'gst_rate', label: 'Rate %', type: 'number', align: 'right' },
-                { key: 'taxable_value', label: 'Taxable Value', type: 'currency', sortable: true, align: 'right' },
-                { key: 'cgst', label: 'CGST', type: 'currency', align: 'right' },
-                { key: 'sgst', label: 'SGST', type: 'currency', align: 'right' },
-                { key: 'gst_amount', label: 'Total GST', type: 'currency', sortable: true, align: 'right' },
+                { key: 'gst_rate', label: t('col.rate'), type: 'number', align: 'right' },
+                { key: 'taxable_value', label: t('col.taxableValue'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'cgst', label: t('col.cgst'), type: 'currency', align: 'right' },
+                { key: 'sgst', label: t('col.sgst'), type: 'currency', align: 'right' },
+                { key: 'gst_amount', label: t('col.totalGst'), type: 'currency', sortable: true, align: 'right' },
               ]} rows={gstReport.rows} />
             ) : gstReport?.gstInvoiceCount > 0 ? (
               <p className="text-sm text-slate-500 py-8 text-center">
@@ -333,16 +333,16 @@ function SalesTab({ filters }: { filters: any }) {
             title={t('section.gstRegister')}
             actions={gstRegister?.rows?.length ? <ExportButton
               columns={[
-                { key: 'date', label: 'Date', type: 'date' },
-                { key: 'invoice_number', label: 'Invoice No.' },
-                { key: 'customer_name', label: 'Customer' },
-                { key: 'customer_gstin', label: 'Customer GSTIN' },
-                { key: 'taxable_value', label: 'Taxable Value', type: 'currency' },
-                { key: 'cgst', label: 'CGST', type: 'currency' },
-                { key: 'sgst', label: 'SGST', type: 'currency' },
-                { key: 'igst', label: 'IGST', type: 'currency' },
-                { key: 'total_gst', label: 'Total GST', type: 'currency' },
-                { key: 'total_amount', label: 'Invoice Total', type: 'currency' },
+                { key: 'date', label: t('col.date'), type: 'date' },
+                { key: 'invoice_number', label: t('col.invoiceNumber') },
+                { key: 'customer_name', label: t('col.customer') },
+                { key: 'customer_gstin', label: t('col.customerGstin') },
+                { key: 'taxable_value', label: t('col.taxableValue'), type: 'currency' },
+                { key: 'cgst', label: t('col.cgst'), type: 'currency' },
+                { key: 'sgst', label: t('col.sgst'), type: 'currency' },
+                { key: 'igst', label: t('col.igst'), type: 'currency' },
+                { key: 'total_gst', label: t('col.totalGst'), type: 'currency' },
+                { key: 'total_amount', label: t('col.invoiceTotal'), type: 'currency' },
               ]}
               data={gstRegister.rows}
               filename="gst_register"
@@ -351,15 +351,15 @@ function SalesTab({ filters }: { filters: any }) {
           >
             {gstRegister?.rows?.length ? (
               <ReportTable columns={[
-                { key: 'date', label: 'Date', type: 'date', sortable: true },
-                { key: 'invoice_number', label: 'Invoice No.' },
-                { key: 'customer_name', label: 'Customer' },
-                { key: 'customer_gstin', label: 'GSTIN' },
-                { key: 'taxable_value', label: 'Taxable', type: 'currency', sortable: true, align: 'right' },
-                { key: 'cgst', label: 'CGST', type: 'currency', align: 'right' },
-                { key: 'sgst', label: 'SGST', type: 'currency', align: 'right' },
-                { key: 'igst', label: 'IGST', type: 'currency', align: 'right' },
-                { key: 'total_gst', label: 'Total GST', type: 'currency', sortable: true, align: 'right' },
+                { key: 'date', label: t('col.date'), type: 'date', sortable: true },
+                { key: 'invoice_number', label: t('col.invoiceNumber') },
+                { key: 'customer_name', label: t('col.customer') },
+                { key: 'customer_gstin', label: t('col.gstin') },
+                { key: 'taxable_value', label: t('col.taxable'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'cgst', label: t('col.cgst'), type: 'currency', align: 'right' },
+                { key: 'sgst', label: t('col.sgst'), type: 'currency', align: 'right' },
+                { key: 'igst', label: t('col.igst'), type: 'currency', align: 'right' },
+                { key: 'total_gst', label: t('col.totalGst'), type: 'currency', sortable: true, align: 'right' },
               ]} rows={gstRegister.rows} maxHeight="420px" />
             ) : (
               <p className="text-sm text-slate-500 py-8 text-center">{t('empty.noGstInvoicesRegister')}</p>
@@ -439,7 +439,7 @@ function FinancialsTab({ filters }: { filters: any }) {
             <KPICard label={t('kpi.grossRevenue')} value={fmt(pnl.revenue)} icon={IndianRupee} color="emerald" />
             <KPICard label={t('kpi.grossProfit')} value={fmt(pnl.gross_profit)} icon={TrendingUp} color="blue" sub={t('kpi.marginPct', { value: (pnl.gross_margin || 0).toFixed(1) })} />
             {isMill && pnl.total_purchases > 0
-              ? <KPICard label={t('kpi.rawMaterialPurchased')} value={fmt(pnl.total_purchases)} icon={ShoppingCart} color="amber" sub={`${pnl.purchase_count || 0} invoices`} />
+              ? <KPICard label={t('kpi.rawMaterialPurchased')} value={fmt(pnl.total_purchases)} icon={ShoppingCart} color="amber" sub={`${pnl.purchase_count || 0} ${t('pnl.invoices')}`} />
               : <KPICard label={t('kpi.totalOverhead')} value={fmt(pnl.total_overhead)} icon={Wallet} color="rose" sub={`₹${(pnl.expenses || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + ₹${(pnl.salaries || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} />
             }
             <KPICard label={t('kpi.netProfit')} value={fmt(pnl.net_profit)} icon={BarChart3}
@@ -451,7 +451,7 @@ function FinancialsTab({ filters }: { filters: any }) {
           <SectionCard
             title={t('section.pnl')}
             actions={<ExportButton
-              columns={[{ key: 'label', label: 'Line Item' }, { key: 'value', label: 'Amount', type: 'currency' }]}
+              columns={[{ key: 'label', label: t('col.lineItem') }, { key: 'value', label: t('col.amount'), type: 'currency' }]}
               data={pnlRows.map(r => ({ label: r.label, value: r.positive ? r.value : -Math.abs(r.value || 0) }))}
               filename="profit_and_loss"
               title={t('section.pnl')}
@@ -578,7 +578,7 @@ function FinancialsTab({ filters }: { filters: any }) {
                           </div>
                         ))}
                         {bs.liabilities.creditorList.length > 5 && (
-                          <p className="text-xs text-slate-400">+{bs.liabilities.creditorList.length - 5} more</p>
+                          <p className="text-xs text-slate-400">{t('bs.moreCreditors', { count: bs.liabilities.creditorList.length - 5 })}</p>
                         )}
                       </div>
                     )}
@@ -638,13 +638,13 @@ function FinancialsTab({ filters }: { filters: any }) {
               color={daybook.net_balance >= 0 ? 'emerald' : 'rose'} />
           </div>
           <SectionCard title={t('section.cashBook')}
-            actions={<ExportButton columns={[{ key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={daybook.entries || []} filename="daybook" />}>
+            actions={<ExportButton columns={[{ key: 'type', label: t('col.type') }, { key: 'amount', label: t('col.amount'), type: 'currency' }, { key: 'description', label: t('col.description') }, { key: 'createdAt', label: t('col.date'), type: 'date' }]} data={daybook.entries || []} filename="daybook" />}>
             <ReportTable
               columns={[
-                { key: 'type', label: 'Type', type: 'badge', sortable: true },
-                { key: 'amount', label: 'Amount', type: 'currency', sortable: true, align: 'right' },
-                { key: 'description', label: 'Description' },
-                { key: 'createdAt', label: 'Date', type: 'date', sortable: true },
+                { key: 'type', label: t('col.type'), type: 'badge', sortable: true },
+                { key: 'amount', label: t('col.amount'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'description', label: t('col.description') },
+                { key: 'createdAt', label: t('col.date'), type: 'date', sortable: true },
               ]}
               rows={daybook.entries || []} maxHeight="480px" />
           </SectionCard>
@@ -710,16 +710,16 @@ function StockTab({ filters }: { filters: any }) {
             <KPICard label={t('kpi.outOfStock')} value={(summary.outCount || 0).toLocaleString()} icon={AlertTriangle} color="rose" />
           </div>
           <SectionCard title={t('section.stockStatus')}
-            actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'current_stock', label: 'Stock', type: 'number' as const }, { key: 'min_stock', label: 'Min Stock', type: 'number' as const }, { key: 'stock_value', label: 'Value', type: 'currency' as const }]} data={data?.rows || []} filename="stock_report" />}>
+            actions={<ExportButton columns={[{ key: 'name', label: t('col.product') }, { key: 'category', label: t('col.category') }, ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop') }] : []), { key: 'current_stock', label: t('col.stock'), type: 'number' as const }, { key: 'min_stock', label: t('col.minStock'), type: 'number' as const }, { key: 'stock_value', label: t('col.value'), type: 'currency' as const }]} data={data?.rows || []} filename="stock_report" />}>
             <ReportTable
               columns={[
-                { key: 'name', label: 'Product', sortable: true },
-                { key: 'category', label: 'Category', type: 'badge', sortable: true },
-                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
-                { key: 'current_stock', label: 'Current Stock', type: 'number', sortable: true, align: 'right' },
-                { key: 'min_stock', label: 'Min Stock', type: 'number', sortable: true, align: 'right' },
-                { key: 'stock_value', label: 'Stock Value', type: 'currency', sortable: true, align: 'right' },
-                { key: 'status', label: 'Status', type: 'badge' },
+                { key: 'name', label: t('col.product'), sortable: true },
+                { key: 'category', label: t('col.category'), type: 'badge', sortable: true },
+                ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop'), sortable: true }] : []),
+                { key: 'current_stock', label: t('col.currentStock'), type: 'number', sortable: true, align: 'right' },
+                { key: 'min_stock', label: t('col.minStock'), type: 'number', sortable: true, align: 'right' },
+                { key: 'stock_value', label: t('col.stockValue'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'status', label: t('col.status'), type: 'badge' },
               ]}
               rows={data?.rows || []} maxHeight="480px" />
           </SectionCard>
@@ -748,11 +748,11 @@ function StockTab({ filters }: { filters: any }) {
               title={t('section.valuationBreakdown')}
               actions={<ExportButton
                 columns={[
-                  { key: 'category', label: 'Category' },
-                  { key: 'product_count', label: 'Products', type: 'number' },
-                  { key: 'total_qty', label: 'Qty', type: 'number' },
-                  { key: 'stock_value', label: 'Value at Cost', type: 'currency' },
-                  { key: 'mrp_value', label: 'Value at MRP', type: 'currency' },
+                  { key: 'category', label: t('col.category') },
+                  { key: 'product_count', label: t('col.products'), type: 'number' },
+                  { key: 'total_qty', label: t('col.qty'), type: 'number' },
+                  { key: 'stock_value', label: t('col.valueAtCost'), type: 'currency' },
+                  { key: 'mrp_value', label: t('col.valueAtMrp'), type: 'currency' },
                 ]}
                 data={valuation.rows || []}
                 filename="stock_valuation_by_category"
@@ -760,9 +760,9 @@ function StockTab({ filters }: { filters: any }) {
               />}
             >
               <ReportTable columns={[
-                { key: 'category', label: 'Category', sortable: true },
-                { key: 'product_count', label: 'Products', type: 'number', sortable: true, align: 'right' },
-                { key: 'total_qty', label: 'Qty', type: 'number', sortable: true, align: 'right' },
+                { key: 'category', label: t('col.category'), sortable: true },
+                { key: 'product_count', label: t('col.products'), type: 'number', sortable: true, align: 'right' },
+                { key: 'total_qty', label: t('col.qty'), type: 'number', sortable: true, align: 'right' },
                 { key: 'stock_value', label: t('invVal.valueAtCost'), type: 'currency', sortable: true, align: 'right' },
                 { key: 'mrp_value', label: t('invVal.valueAtMrp'), type: 'currency', sortable: true, align: 'right' },
               ]} rows={valuation.rows || []} maxHeight="300px" />
@@ -774,13 +774,13 @@ function StockTab({ filters }: { filters: any }) {
             title={t('section.inventoryValuation')}
             actions={<ExportButton
               columns={[
-                { key: 'name', label: 'Product' },
-                { key: 'category', label: 'Category' },
-                { key: 'current_stock', label: 'Stock', type: 'number' },
-                { key: 'cost_per_unit', label: 'Cost/Unit', type: 'currency' },
-                { key: 'value_at_cost', label: 'Value at Cost', type: 'currency' },
-                { key: 'selling_price', label: 'MRP/Unit', type: 'currency' },
-                { key: 'value_at_mrp', label: 'Value at MRP', type: 'currency' },
+                { key: 'name', label: t('col.product') },
+                { key: 'category', label: t('col.category') },
+                { key: 'current_stock', label: t('col.stock'), type: 'number' },
+                { key: 'cost_per_unit', label: t('col.costPerUnit'), type: 'currency' },
+                { key: 'value_at_cost', label: t('col.valueAtCost'), type: 'currency' },
+                { key: 'selling_price', label: t('col.mrpUnit'), type: 'currency' },
+                { key: 'value_at_mrp', label: t('col.valueAtMrp'), type: 'currency' },
               ]}
               data={valuation.detail || []}
               filename="inventory_valuation_detail"
@@ -788,9 +788,9 @@ function StockTab({ filters }: { filters: any }) {
             />}
           >
             <ReportTable columns={[
-              { key: 'name', label: 'Product', sortable: true },
-              { key: 'category', label: 'Category', type: 'badge', sortable: true },
-              { key: 'current_stock', label: 'Stock', type: 'number', sortable: true, align: 'right' },
+              { key: 'name', label: t('col.product'), sortable: true },
+              { key: 'category', label: t('col.category'), type: 'badge', sortable: true },
+              { key: 'current_stock', label: t('col.stock'), type: 'number', sortable: true, align: 'right' },
               { key: 'cost_per_unit', label: t('invVal.costPerUnit'), type: 'currency', sortable: true, align: 'right' },
               { key: 'value_at_cost', label: t('invVal.valueAtCost'), type: 'currency', sortable: true, align: 'right' },
               { key: 'value_at_mrp', label: t('invVal.valueAtMrp'), type: 'currency', sortable: true, align: 'right' },
@@ -801,13 +801,13 @@ function StockTab({ filters }: { filters: any }) {
 
       {subTab === 'dead' && deadStock?.rows && (
         <SectionCard title={t('section.deadStock')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Product' }, { key: 'category', label: 'Category' }, { key: 'current_stock', label: 'Stock', type: 'number' }, { key: 'tied_value', label: 'Tied Value', type: 'currency' }]} data={deadStock.rows} filename="dead_stock" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: t('col.product') }, { key: 'category', label: t('col.category') }, { key: 'current_stock', label: t('col.stock'), type: 'number' }, { key: 'tied_value', label: t('col.tiedValue'), type: 'currency' }]} data={deadStock.rows} filename="dead_stock" />}>
           <ReportTable
             columns={[
-              { key: 'name', label: 'Product', sortable: true },
-              { key: 'category', label: 'Category', type: 'badge' },
-              { key: 'current_stock', label: 'Stock', type: 'number', sortable: true, align: 'right' },
-              { key: 'tied_value', label: 'Tied Capital', type: 'currency', sortable: true, align: 'right' },
+              { key: 'name', label: t('col.product'), sortable: true },
+              { key: 'category', label: t('col.category'), type: 'badge' },
+              { key: 'current_stock', label: t('col.stock'), type: 'number', sortable: true, align: 'right' },
+              { key: 'tied_value', label: t('col.tiedCapital'), type: 'currency', sortable: true, align: 'right' },
             ]}
             rows={deadStock.rows} maxHeight="480px"
             emptyMessage={t('empty.noDeadStock')} />
@@ -825,17 +825,17 @@ function StockTab({ filters }: { filters: any }) {
           <SectionCard title={t('section.batchProfit')}
             actions={<ExportButton
               columns={[
-                { key: 'productName', label: 'Product' },
-                { key: 'batchNumber', label: 'Batch #' },
-                { key: 'barcode', label: 'Barcode' },
-                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []),
-                { key: 'unitsSold', label: 'Units Sold', type: 'number' as const },
-                { key: 'avgCostPerUnit', label: 'Cost/Unit', type: 'currency' as const },
-                { key: 'avgSellPrice', label: 'Sold At', type: 'currency' as const },
-                { key: 'revenue', label: 'Revenue', type: 'currency' as const },
-                { key: 'profit', label: 'Profit', type: 'currency' as const },
-                { key: 'marginPercent', label: 'Margin %', type: 'number' as const },
-                { key: 'remainingQty', label: 'Remaining Stock', type: 'number' as const },
+                { key: 'productName', label: t('col.product') },
+                { key: 'batchNumber', label: t('col.batchNum') },
+                { key: 'barcode', label: t('col.barcode') },
+                ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop') }] : []),
+                { key: 'unitsSold', label: t('col.unitsSold'), type: 'number' as const },
+                { key: 'avgCostPerUnit', label: t('col.costPerUnit'), type: 'currency' as const },
+                { key: 'avgSellPrice', label: t('col.soldAt'), type: 'currency' as const },
+                { key: 'revenue', label: t('col.revenue'), type: 'currency' as const },
+                { key: 'profit', label: t('col.profit'), type: 'currency' as const },
+                { key: 'marginPercent', label: t('col.marginPct'), type: 'number' as const },
+                { key: 'remainingQty', label: t('col.remainingStock'), type: 'number' as const },
               ]}
               data={batchProfit.rows}
               filename="batch_profit"
@@ -844,16 +844,16 @@ function StockTab({ filters }: { filters: any }) {
           >
             <ReportTable
               columns={[
-                { key: 'productName', label: 'Product', sortable: true },
-                { key: 'batchNumber', label: 'Batch #', sortable: true },
-                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
-                { key: 'unitsSold', label: 'Units Sold', type: 'number', sortable: true, align: 'right' },
-                { key: 'avgCostPerUnit', label: 'Cost/Unit', type: 'currency', sortable: true, align: 'right' },
-                { key: 'avgSellPrice', label: 'Sold At', type: 'currency', sortable: true, align: 'right' },
-                { key: 'revenue', label: 'Revenue', type: 'currency', sortable: true, align: 'right' },
-                { key: 'profit', label: 'Profit', type: 'currency', sortable: true, align: 'right' },
-                { key: 'marginPercent', label: 'Margin %', type: 'percent', sortable: true, align: 'right' },
-                { key: 'remainingQty', label: 'Remaining Stock', type: 'number', sortable: true, align: 'right' },
+                { key: 'productName', label: t('col.product'), sortable: true },
+                { key: 'batchNumber', label: t('col.batchNum'), sortable: true },
+                ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop'), sortable: true }] : []),
+                { key: 'unitsSold', label: t('col.unitsSold'), type: 'number', sortable: true, align: 'right' },
+                { key: 'avgCostPerUnit', label: t('col.costPerUnit'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'avgSellPrice', label: t('col.soldAt'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'revenue', label: t('col.revenue'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'profit', label: t('col.profit'), type: 'currency', sortable: true, align: 'right' },
+                { key: 'marginPercent', label: t('col.marginPct'), type: 'percent', sortable: true, align: 'right' },
+                { key: 'remainingQty', label: t('col.remainingStock'), type: 'number', sortable: true, align: 'right' },
               ]}
               rows={batchProfit.rows} maxHeight="480px"
               emptyMessage={t('empty.noBatchSales')} />
@@ -900,37 +900,37 @@ function ExpensesTab({ filters }: { filters: any }) {
         <SectionCard
           title={t('section.dailyExpenseTrend')}
           actions={data?.trend?.length ? <ExportButton
-            columns={[{ key: 'date', label: 'Date', type: 'date' }, { key: 'amount', label: 'Expenses', type: 'currency' }]}
+            columns={[{ key: 'date', label: t('col.date'), type: 'date' }, { key: 'amount', label: t('col.expenses'), type: 'currency' }]}
             data={data.trend}
             filename="daily_expense_trend"
             title={t('section.dailyExpenseTrend')}
           /> : undefined}
         >
           <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
-            yKeys={[{ key: 'amount', label: 'Expenses', color: '#ef4444' }]} height={240} />
+            yKeys={[{ key: 'amount', label: t('col.expenses'), color: '#ef4444' }]} height={240} />
         </SectionCard>
         <SectionCard
           title={t('section.expensesByCategory')}
           actions={byCategory?.rows?.length ? <ExportButton
-            columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }]}
+            columns={[{ key: 'category', label: t('col.category') }, { key: 'amount', label: t('col.amount'), type: 'currency' }]}
             data={byCategory.rows}
             filename="expenses_by_category"
             title="Expenses by Category"
           /> : undefined}
         >
           <DrillDownChart type="pie" data={byCategory?.rows || []} xKey="category"
-            yKeys={[{ key: 'amount', label: 'Amount' }]} height={240} />
+            yKeys={[{ key: 'amount', label: t('col.amount') }]} height={240} />
         </SectionCard>
       </div>
       <SectionCard title={t('section.allExpenses')}
-        actions={<ExportButton columns={[{ key: 'category', label: 'Category' }, { key: 'amount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'description', label: 'Description' }, { key: 'createdAt', label: 'Date', type: 'date' }]} data={data?.expenses || []} filename="expenses" />}>
+        actions={<ExportButton columns={[{ key: 'category', label: t('col.category') }, { key: 'amount', label: t('col.amount'), type: 'currency' }, { key: 'paymentMode', label: t('col.mode') }, { key: 'description', label: t('col.description') }, { key: 'createdAt', label: t('col.date'), type: 'date' }]} data={data?.expenses || []} filename="expenses" />}>
         <ReportTable
           columns={[
-            { key: 'category', label: 'Category', type: 'badge', sortable: true },
-            { key: 'amount', label: 'Amount', type: 'currency', sortable: true, align: 'right' },
-            { key: 'paymentMode', label: 'Mode', type: 'badge' },
-            { key: 'description', label: 'Description' },
-            { key: 'createdAt', label: 'Date', type: 'date', sortable: true },
+            { key: 'category', label: t('col.category'), type: 'badge', sortable: true },
+            { key: 'amount', label: t('col.amount'), type: 'currency', sortable: true, align: 'right' },
+            { key: 'paymentMode', label: t('col.mode'), type: 'badge' },
+            { key: 'description', label: t('col.description') },
+            { key: 'createdAt', label: t('col.date'), type: 'date', sortable: true },
           ]}
           rows={data?.expenses || []} maxHeight="400px" />
       </SectionCard>
@@ -978,26 +978,26 @@ function CRMTab({ filters }: { filters: any }) {
       </div>
       <div className={cn('grid grid-cols-1 gap-6', isUdyog && 'lg:grid-cols-2')}>
         <SectionCard title={t('section.outstandingCustomers')}
-          actions={<ExportButton columns={[{ key: 'name', label: 'Customer' }, { key: 'mobile', label: 'Mobile' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'totalDue', label: 'Outstanding', type: 'currency' as const }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
+          actions={<ExportButton columns={[{ key: 'name', label: t('col.customer') }, { key: 'mobile', label: t('col.mobile') }, ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop') }] : []), { key: 'totalDue', label: t('col.outstanding'), type: 'currency' as const }]} data={outstanding?.rows || []} filename="outstanding_customers" />}>
           <ReportTable
             columns={[
-              { key: 'name', label: 'Customer', sortable: true },
-              { key: 'mobile', label: 'Mobile' },
-              ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
-              { key: 'totalDue', label: 'Outstanding', type: 'currency', sortable: true, align: 'right' },
-              { key: 'creditLimit', label: 'Credit Limit', type: 'currency', align: 'right' },
+              { key: 'name', label: t('col.customer'), sortable: true },
+              { key: 'mobile', label: t('col.mobile') },
+              ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop'), sortable: true }] : []),
+              { key: 'totalDue', label: t('col.outstanding'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'creditLimit', label: t('col.creditLimit'), type: 'currency', align: 'right' },
             ]}
             rows={outstanding?.rows || []} maxHeight="380px" />
         </SectionCard>
         {isUdyog && (
           <SectionCard title={t('section.outstandingSuppliers')}
-            actions={<ExportButton columns={[{ key: 'name', label: 'Supplier' }, { key: 'mobile', label: 'Mobile' }, ...(allShopAccess ? [{ key: 'shopName', label: 'Shop' }] : []), { key: 'balance', label: 'Payable', type: 'currency' as const }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
+            actions={<ExportButton columns={[{ key: 'name', label: t('col.supplier') }, { key: 'mobile', label: t('col.mobile') }, ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop') }] : []), { key: 'balance', label: t('col.payable'), type: 'currency' as const }]} data={suppliers?.rows || []} filename="outstanding_suppliers" />}>
             <ReportTable
               columns={[
-                { key: 'name', label: 'Supplier', sortable: true },
-                { key: 'mobile', label: 'Mobile' },
-                ...(allShopAccess ? [{ key: 'shopName', label: 'Shop', sortable: true }] : []),
-                { key: 'balance', label: 'Payable', type: 'currency', sortable: true, align: 'right' },
+                { key: 'name', label: t('col.supplier'), sortable: true },
+                { key: 'mobile', label: t('col.mobile') },
+                ...(allShopAccess ? [{ key: 'shopName', label: t('col.shop'), sortable: true }] : []),
+                { key: 'balance', label: t('col.payable'), type: 'currency', sortable: true, align: 'right' },
               ]}
               rows={suppliers?.rows || []} maxHeight="380px" />
           </SectionCard>
@@ -1042,14 +1042,14 @@ function StaffTab({ filters }: { filters: any }) {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SectionCard title={t('section.salaryPayroll')}
-          actions={<ExportButton columns={[{ key: 'monthYear', label: 'Period' }, { key: 'netAmount', label: 'Amount', type: 'currency' }, { key: 'paymentMode', label: 'Mode' }, { key: 'paidAt', label: 'Date', type: 'date' }]} data={payroll?.rows || []} filename="payroll" />}>
+          actions={<ExportButton columns={[{ key: 'monthYear', label: t('col.period') }, { key: 'netAmount', label: t('col.amount'), type: 'currency' }, { key: 'paymentMode', label: t('col.mode') }, { key: 'paidAt', label: t('col.date'), type: 'date' }]} data={payroll?.rows || []} filename="payroll" />}>
           <ReportTable
             columns={[
-              { key: 'staff', label: 'Staff', sortable: false },
-              { key: 'monthYear', label: 'Period', type: 'badge', sortable: true },
-              { key: 'netAmount', label: 'Net Paid', type: 'currency', sortable: true, align: 'right' },
-              { key: 'paymentMode', label: 'Mode', type: 'badge' },
-              { key: 'paidAt', label: 'Date', type: 'date', sortable: true },
+              { key: 'staff', label: t('col.staff'), sortable: false },
+              { key: 'monthYear', label: t('col.period'), type: 'badge', sortable: true },
+              { key: 'netAmount', label: t('col.netPaid'), type: 'currency', sortable: true, align: 'right' },
+              { key: 'paymentMode', label: t('col.mode'), type: 'badge' },
+              { key: 'paidAt', label: t('col.date'), type: 'date', sortable: true },
             ]}
             rows={(payroll?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—' }))}
             maxHeight="380px" />
@@ -1058,10 +1058,10 @@ function StaffTab({ filters }: { filters: any }) {
           title={t('section.attendanceLog')}
           actions={<ExportButton
             columns={[
-              { key: 'staff', label: 'Staff' },
-              { key: 'date', label: 'Date', type: 'date' },
-              { key: 'status', label: 'Status' },
-              { key: 'notes', label: 'Notes' },
+              { key: 'staff', label: t('col.staff') },
+              { key: 'date', label: t('col.date'), type: 'date' },
+              { key: 'status', label: t('col.status') },
+              { key: 'notes', label: t('col.notes') },
             ]}
             data={(attendance?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—', notes: r.reason || '' }))}
             filename="attendance_log"
@@ -1070,10 +1070,10 @@ function StaffTab({ filters }: { filters: any }) {
         >
           <ReportTable
             columns={[
-              { key: 'staff', label: 'Staff', sortable: false },
-              { key: 'date', label: 'Date', type: 'date', sortable: true },
-              { key: 'status', label: 'Status', type: 'badge', sortable: true },
-              { key: 'notes', label: 'Notes' },
+              { key: 'staff', label: t('col.staff'), sortable: false },
+              { key: 'date', label: t('col.date'), type: 'date', sortable: true },
+              { key: 'status', label: t('col.status'), type: 'badge', sortable: true },
+              { key: 'notes', label: t('col.notes') },
             ]}
             rows={(attendance?.rows || []).map((r: any) => ({ ...r, staff: r.staff?.name || '—', notes: r.reason || '' }))}
             maxHeight="380px" />
@@ -1118,16 +1118,16 @@ function PurchasesTab({ filters }: { filters: any }) {
       </div>
       <SectionCard title={t('section.purchaseTrend')}>
         <DrillDownChart type="bar" data={data?.trend || []} xKey="date"
-          yKeys={[{ key: 'cost', label: 'Cost', color: '#ef4444' }, { key: 'gst', label: 'GST', color: '#f59e0b' }]} height={260} />
+          yKeys={[{ key: 'cost', label: t('col.cost'), color: '#ef4444' }, { key: 'gst', label: t('col.gst'), color: '#f59e0b' }]} height={260} />
       </SectionCard>
       <SectionCard title={t('section.bySupplier')}
-        actions={<ExportButton columns={[{ key: 'supplier', label: 'Supplier' }, { key: 'cost', label: 'Cost', type: 'currency' }, { key: 'gst', label: 'GST', type: 'currency' }, { key: 'count', label: 'Invoices', type: 'number' }]} data={(bySupplier?.rows || []).map((r: any) => ({ supplier: r.supplier?.name || '—', cost: r.cost, gst: r.gst, count: r.count }))} filename="purchase_by_supplier" />}>
+        actions={<ExportButton columns={[{ key: 'supplier', label: t('col.supplier') }, { key: 'cost', label: t('col.cost'), type: 'currency' }, { key: 'gst', label: t('col.gst'), type: 'currency' }, { key: 'count', label: t('col.invoices'), type: 'number' }]} data={(bySupplier?.rows || []).map((r: any) => ({ supplier: r.supplier?.name || '—', cost: r.cost, gst: r.gst, count: r.count }))} filename="purchase_by_supplier" />}>
         <ReportTable
           columns={[
-            { key: 'supplier', label: 'Supplier' },
-            { key: 'cost', label: 'Total Cost', type: 'currency', sortable: true, align: 'right' },
-            { key: 'gst', label: 'GST Paid', type: 'currency', sortable: true, align: 'right' },
-            { key: 'count', label: 'Invoices', type: 'number', sortable: true, align: 'right' },
+            { key: 'supplier', label: t('col.supplier') },
+            { key: 'cost', label: t('col.totalCost'), type: 'currency', sortable: true, align: 'right' },
+            { key: 'gst', label: t('col.gstPaid'), type: 'currency', sortable: true, align: 'right' },
+            { key: 'count', label: t('col.invoices'), type: 'number', sortable: true, align: 'right' },
           ]}
           rows={(bySupplier?.rows || []).map((r: any) => ({ ...r, supplier: r.supplier?.name || '—' }))}
           maxHeight="380px" />
@@ -1142,6 +1142,7 @@ function PurchasesTab({ filters }: { filters: any }) {
 // long it took. Fully downloadable as PDF / Excel / CSV via ExportButton — this tab is a thin table, the export IS the report.
 function MillingTab({ filters }: { filters: any }) {
   const { activeShopId } = useBusinessStore();
+  const t = useTranslations('Reports');
   const [data, setData] = useState<{ rows: any[]; summary: any } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1161,52 +1162,52 @@ function MillingTab({ filters }: { filters: any }) {
   const rows = data?.rows || [];
   const s = data?.summary || {};
   const columns = [
-    { key: 'batchNumber', label: 'Batch' },
-    { key: 'status', label: 'Status' },
-    { key: 'rawMaterial', label: 'Raw Material' },
-    { key: 'rawLotNumber', label: 'Raw Lot' },
-    { key: 'inputKg', label: 'Input (Kg)', type: 'number' as const },
-    { key: 'outputProduct', label: 'Finished Good' },
-    { key: 'finishedKg', label: 'Finished (Kg)', type: 'number' as const },
-    { key: 'branKg', label: 'Bran / Konda (Kg)', type: 'number' as const },
-    { key: 'huskKg', label: 'Husk / Bhusa (Kg)', type: 'number' as const },
-    { key: 'brokenKg', label: 'Broken (Kg)', type: 'number' as const },
-    { key: 'wastageKg', label: 'Wastage (Kg)', type: 'number' as const },
-    { key: 'recoveryPct', label: 'Recovery %', type: 'number' as const },
-    { key: 'operators', label: 'Operator(s)' },
-    { key: 'stages', label: 'Stages' },
-    { key: 'outputs', label: 'All Outputs' },
-    { key: 'startedAt', label: 'Started' },
-    { key: 'closedAt', label: 'Closed' },
-    { key: 'processingHours', label: 'Processing (Hours)', type: 'number' as const },
-    { key: 'processingDays', label: 'Processing (Days)', type: 'number' as const },
-    { key: 'qualityFlag', label: 'Quality Flag' },
-    { key: 'qualityDecision', label: 'Quality Decision' },
-    { key: 'moisturePct', label: 'Moisture %' },
-    { key: 'foreignMatterPct', label: 'Foreign Matter %' },
-    { key: 'brokenPct', label: 'Broken %' },
-    { key: 'damagedPct', label: 'Damaged %' },
+    { key: 'batchNumber', label: t('col.batch') },
+    { key: 'status', label: t('col.status') },
+    { key: 'rawMaterial', label: t('col.rawMaterialCol') },
+    { key: 'rawLotNumber', label: t('col.rawLot') },
+    { key: 'inputKg', label: t('col.inputKg'), type: 'number' as const },
+    { key: 'outputProduct', label: t('col.finishedGood') },
+    { key: 'finishedKg', label: t('col.finishedKg'), type: 'number' as const },
+    { key: 'branKg', label: t('col.branKg'), type: 'number' as const },
+    { key: 'huskKg', label: t('col.huskKg'), type: 'number' as const },
+    { key: 'brokenKg', label: t('col.brokenKg'), type: 'number' as const },
+    { key: 'wastageKg', label: t('col.wastageKg'), type: 'number' as const },
+    { key: 'recoveryPct', label: t('col.recoveryPct'), type: 'number' as const },
+    { key: 'operators', label: t('col.operators') },
+    { key: 'stages', label: t('col.colStages') },
+    { key: 'outputs', label: t('col.allOutputs') },
+    { key: 'startedAt', label: t('col.started') },
+    { key: 'closedAt', label: t('col.closed') },
+    { key: 'processingHours', label: t('col.processingHours'), type: 'number' as const },
+    { key: 'processingDays', label: t('col.processingDays'), type: 'number' as const },
+    { key: 'qualityFlag', label: t('col.qualityFlag') },
+    { key: 'qualityDecision', label: t('col.qualityDecision') },
+    { key: 'moisturePct', label: t('col.moisturePct') },
+    { key: 'foreignMatterPct', label: t('col.foreignMatterPct') },
+    { key: 'brokenPct', label: t('col.brokenPct') },
+    { key: 'damagedPct', label: t('col.damagedPct') },
   ];
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="Batches" value={(s.batches || 0).toLocaleString()} icon={Wheat} color="emerald" />
-        <KPICard label="Raw Material In (Kg)" value={(s.totalInputKg || 0).toLocaleString('en-IN')} icon={Package} color="amber" />
-        <KPICard label="Finished Out (Kg)" value={(s.totalFinishedKg || 0).toLocaleString('en-IN')} icon={Box} color="blue" />
-        <KPICard label="Bran + Husk (Kg)" value={((s.totalBranKg || 0) + (s.totalHuskKg || 0)).toLocaleString('en-IN')} icon={Scale} color="purple" />
+        <KPICard label={t('milling.batches')} value={(s.batches || 0).toLocaleString()} icon={Wheat} color="emerald" />
+        <KPICard label={t('milling.rawMaterialInKg')} value={(s.totalInputKg || 0).toLocaleString('en-IN')} icon={Package} color="amber" />
+        <KPICard label={t('milling.finishedOutKg')} value={(s.totalFinishedKg || 0).toLocaleString('en-IN')} icon={Box} color="blue" />
+        <KPICard label={t('milling.branHuskKg')} value={((s.totalBranKg || 0) + (s.totalHuskKg || 0)).toLocaleString('en-IN')} icon={Scale} color="purple" />
       </div>
-      <SectionCard title="Milling Report — every batch"
-        actions={<ExportButton columns={columns} data={rows} filename="milling_report" title="Milling Report" orientation="landscape"
+      <SectionCard title={t('milling.reportTitle')}
+        actions={<ExportButton columns={columns} data={rows} filename="milling_report" title={t('milling.reportTitle')} orientation="landscape"
           summary={[
-            { label: 'Batches', value: String(s.batches || 0) },
-            { label: 'Raw Material In', value: `${(s.totalInputKg || 0).toLocaleString('en-IN')} Kg` },
-            { label: 'Finished Out', value: `${(s.totalFinishedKg || 0).toLocaleString('en-IN')} Kg` },
-            { label: 'Bran / Konda', value: `${(s.totalBranKg || 0).toLocaleString('en-IN')} Kg` },
-            { label: 'Husk / Bhusa', value: `${(s.totalHuskKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: t('milling.batches'), value: String(s.batches || 0) },
+            { label: t('milling.summaryRawIn'), value: `${(s.totalInputKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: t('milling.summaryFinishedOut'), value: `${(s.totalFinishedKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: t('milling.summaryBranKonda'), value: `${(s.totalBranKg || 0).toLocaleString('en-IN')} Kg` },
+            { label: t('milling.summaryHuskBhusa'), value: `${(s.totalHuskKg || 0).toLocaleString('en-IN')} Kg` },
           ]} />}>
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-500 py-8 text-center">No production batches in this period.</p>
+          <p className="text-sm text-slate-500 py-8 text-center">{t('milling.noBatches')}</p>
         ) : (
           <div className="overflow-x-auto">
             <ReportTable columns={columns.map(c => ({ ...c, sortable: true, align: c.type === 'number' ? 'right' as const : 'left' as const }))} rows={rows} maxHeight="480px" />
@@ -1219,6 +1220,7 @@ function MillingTab({ filters }: { filters: any }) {
 
 // ── BALANCE SHEET VIEW ────────────────────────────────────────────────────
 function BalanceSheetView({ data }: { data: any }) {
+  const t = useTranslations('Reports');
   const fmt = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
   const balanced = Math.abs((data.assets?.total || 0) - ((data.liabilities?.total || 0) + (data.equity?.total || 0))) < 2;
 
@@ -1226,34 +1228,34 @@ function BalanceSheetView({ data }: { data: any }) {
 
   return (
     <div className="space-y-6">
-      {asOf && <p className="text-xs text-slate-500 dark:text-slate-400">As of {asOf}</p>}
+      {asOf && <p className="text-xs text-slate-500 dark:text-slate-400">{t('bs.asOf', { date: asOf })}</p>}
 
       {!balanced && (
         <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 px-4 py-3">
           <p className="text-xs text-amber-800 dark:text-amber-300">
-            Note: Opening balances may not be fully recorded, so Assets may not equal Liabilities + Equity. Record opening stock costs and balances for a balanced sheet.
+            {t('bs.openingBalanceNote')}
           </p>
         </div>
       )}
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KPICard label="Total Assets" value={fmt(data.assets?.total || 0)} icon={Box} color="emerald" />
-        <KPICard label="Total Liabilities" value={fmt(data.liabilities?.total || 0)} icon={ArrowDownRight} color="rose" />
-        <KPICard label="Net Worth" value={fmt(data.equity?.total || 0)} icon={Scale} color="blue" />
+        <KPICard label={t('kpi.totalAssets')} value={fmt(data.assets?.total || 0)} icon={Box} color="emerald" />
+        <KPICard label={t('kpi.totalLiabilities')} value={fmt(data.liabilities?.total || 0)} icon={ArrowDownRight} color="rose" />
+        <KPICard label={t('bs.netWorth')} value={fmt(data.equity?.total || 0)} icon={Scale} color="blue" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ASSETS */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-emerald-50 dark:bg-emerald-900/20">
-            <h3 className="font-black text-sm text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Assets</h3>
+            <h3 className="font-black text-sm text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t('bs.assetsHeader')}</h3>
           </div>
           <div className="p-5 space-y-2">
             {[
-              { label: 'Cash & Bank', value: data.assets?.cash || 0 },
-              { label: 'Accounts Receivable (Debtors)', value: data.assets?.debtors || 0 },
-              { label: 'Closing Stock (at cost)', value: data.assets?.closingStock || 0 },
+              { label: t('bs.cash'), value: data.assets?.cash || 0 },
+              { label: t('bs.debtors'), value: data.assets?.debtors || 0 },
+              { label: t('bs.closingStock'), value: data.assets?.closingStock || 0 },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800 last:border-0">
                 <span className="text-sm text-slate-600 dark:text-slate-300">{row.label}</span>
@@ -1262,11 +1264,11 @@ function BalanceSheetView({ data }: { data: any }) {
             ))}
             {(data.assets?.uncostedProducts || 0) > 0 && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
-                {data.assets.uncostedProducts} product(s) have no cost price and are excluded from stock value.
+                {t('bs.uncostedExcluded', { count: data.assets.uncostedProducts })}
               </p>
             )}
             <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-emerald-300 dark:border-emerald-600">
-              <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Total Assets</span>
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t('bs.totalAssets')}</span>
               <span className="text-base font-black text-emerald-700 dark:text-emerald-400 tabular-nums">{fmt(data.assets?.total || 0)}</span>
             </div>
           </div>
@@ -1276,11 +1278,11 @@ function BalanceSheetView({ data }: { data: any }) {
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
             <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-rose-50 dark:bg-rose-900/20">
-              <h3 className="font-black text-sm text-rose-700 dark:text-rose-400 uppercase tracking-wider">Liabilities</h3>
+              <h3 className="font-black text-sm text-rose-700 dark:text-rose-400 uppercase tracking-wider">{t('bs.liabilitiesHeader')}</h3>
             </div>
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800">
-                <span className="text-sm text-slate-600 dark:text-slate-300">Accounts Payable (Creditors)</span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">{t('bs.creditors')}</span>
                 <span className="text-sm font-semibold text-slate-900 dark:text-white tabular-nums">{fmt(data.liabilities?.creditors || 0)}</span>
               </div>
               {(data.liabilities?.creditorList || []).slice(0, 5).map((c: any) => (
@@ -1290,7 +1292,7 @@ function BalanceSheetView({ data }: { data: any }) {
                 </div>
               ))}
               <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-rose-300 dark:border-rose-600">
-                <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider">Total Liabilities</span>
+                <span className="text-sm font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider">{t('bs.totalLiabilities')}</span>
                 <span className="text-base font-black text-rose-700 dark:text-rose-400 tabular-nums">{fmt(data.liabilities?.total || 0)}</span>
               </div>
             </div>
@@ -1298,15 +1300,15 @@ function BalanceSheetView({ data }: { data: any }) {
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
             <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-blue-50 dark:bg-blue-900/20">
-              <h3 className="font-black text-sm text-blue-700 dark:text-blue-400 uppercase tracking-wider">Equity / Net Worth</h3>
+              <h3 className="font-black text-sm text-blue-700 dark:text-blue-400 uppercase tracking-wider">{t('bs.equityHeader')}</h3>
             </div>
             <div className="p-5 space-y-2">
               <div className="flex items-center justify-between py-1.5 border-b border-dashed border-slate-100 dark:border-slate-800">
-                <span className="text-sm text-slate-600 dark:text-slate-300">Net Profit (Period)</span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">{t('bs.netProfitPeriod')}</span>
                 <span className={`text-sm font-semibold tabular-nums ${(data.equity?.netProfit || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>{fmt(data.equity?.netProfit || 0)}</span>
               </div>
               <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-blue-300 dark:border-blue-600">
-                <span className="text-sm font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Net Worth</span>
+                <span className="text-sm font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">{t('bs.netWorth')}</span>
                 <span className="text-base font-black text-blue-700 dark:text-blue-400 tabular-nums">{fmt(data.equity?.total || 0)}</span>
               </div>
             </div>
@@ -1316,13 +1318,13 @@ function BalanceSheetView({ data }: { data: any }) {
 
       {/* P&L Summary */}
       {data.pnlSummary && (
-        <SectionCard title="Period P&L Summary">
+        <SectionCard title={t('section.pnlSummary')}>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: 'Revenue', value: data.pnlSummary.revenue, color: 'emerald' },
-              { label: 'Purchases', value: data.pnlSummary.purchases, color: 'amber' },
-              { label: 'Expenses', value: data.pnlSummary.expenses, color: 'rose' },
-              { label: 'Net Profit', value: data.pnlSummary.netProfit, color: data.pnlSummary.netProfit >= 0 ? 'emerald' : 'rose' },
+              { label: t('bs.pnlRevenue'), value: data.pnlSummary.revenue, color: 'emerald' },
+              { label: t('bs.pnlPurchases'), value: data.pnlSummary.purchases, color: 'amber' },
+              { label: t('bs.pnlExpenses'), value: data.pnlSummary.expenses, color: 'rose' },
+              { label: t('kpi.netProfit'), value: data.pnlSummary.netProfit, color: data.pnlSummary.netProfit >= 0 ? 'emerald' : 'rose' },
             ].map((kpi) => (
               <KPICard key={kpi.label} label={kpi.label} value={fmt(kpi.value)} icon={IndianRupee} color={kpi.color} />
             ))}
@@ -1428,7 +1430,7 @@ function CATab() {
         <ReportPeriodProvider startDate={dateRange.from} endDate={dateRange.to}>
           {activeDef.key === 'balance_sheet' ? (
             data ? <BalanceSheetView data={data} /> : (
-              <p className="text-sm text-slate-500 text-center py-12">No data available for selected period.</p>
+              <p className="text-sm text-slate-500 text-center py-12">{t('empty.noData')}</p>
             )
           ) : (
             <>
@@ -1525,7 +1527,7 @@ export default function ReportsPage() {
                   : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
               )}>
               <Icon size={15} />
-              <span className="hidden sm:inline">{t(`tabs.${tab.id}` as any)}</span>
+              <span className="text-[10px] sm:text-sm">{t(`tabs.${tab.id}` as any)}</span>
             </button>
           );
         })}

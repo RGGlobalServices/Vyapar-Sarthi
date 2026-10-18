@@ -339,7 +339,7 @@ export default function CustomersPage() {
   const handleDownloadCollectionRegister = async () => {
     const outstanding = customers.filter(c => (c.totalDue || 0) > 0);
     if (outstanding.length === 0) {
-      toast.error('No outstanding customers to collect from');
+      toast.error(t('noOutstandingToCollect'));
       return;
     }
     setGeneratingRegister(true);
@@ -361,7 +361,7 @@ export default function CustomersPage() {
       });
     } catch (e) {
       console.error(e);
-      toast.error('Failed to generate collection register');
+      toast.error(t('collectionRegisterFailed'));
     } finally {
       setGeneratingRegister(false);
     }
@@ -436,7 +436,7 @@ export default function CustomersPage() {
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-400 dark:hover:border-emerald-600 hover:text-emerald-600 dark:hover:text-emerald-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
           >
             {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
-            Collection Register
+            {t('collectionRegisterBtn')}
           </button>
           <button
             onClick={() => setShowScanModal(true)}
@@ -444,7 +444,7 @@ export default function CustomersPage() {
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-400 dark:hover:border-emerald-600 hover:text-emerald-600 dark:hover:text-emerald-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
           >
             <ScanLine size={18} />
-            Scan Collection Sheet
+            {t('scanCollectionSheetBtn')}
           </button>
           <button
             onClick={() => setShowNewCustomer(true)}
@@ -616,7 +616,7 @@ export default function CustomersPage() {
                     onClick={() => setShowAddBill(true)}
                     className="text-xs font-bold bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-400 px-3 py-1.5 rounded-lg flex items-center justify-center gap-1 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
                   >
-                    <ReceiptText size={14} /> Add Bill
+                    <ReceiptText size={14} /> {t('addBillBtn')}
                   </button>
                   {selectedCustomer.totalDue > 0 && (
                     <button
@@ -773,7 +773,7 @@ export default function CustomersPage() {
                                 },
                               });
                             } catch (e) {
-                              toast.error('Failed to generate slip');
+                              toast.error(t('slipGenerateFailed'));
                             } finally {
                               setDownloadingSlipId(null);
                             }

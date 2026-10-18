@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Calendar, SlidersHorizontal, ChevronDown, X } from 'lucide-react';
+import { Calendar } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 interface ReportFilterBarProps {
   onChange: (filters: ReportFilters) => void;
@@ -21,17 +22,18 @@ export interface ReportFilters {
   paymentMode?: string;
 }
 
-const PRESETS = [
-  { label: 'Today', getDates: () => { const t = new Date().toISOString().split('T')[0]; return { s: t, e: t }; } },
-  { label: 'This Week', getDates: () => { const d = new Date(); const start = new Date(d); start.setDate(d.getDate() - d.getDay()); return { s: start.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
-  { label: 'Last 7 Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 6); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
-  { label: 'This Month', getDates: () => { const d = new Date(); const s = new Date(d.getFullYear(), d.getMonth(), 1); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
-  { label: 'Last 30 Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 29); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
-  { label: 'Last 90 Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 89); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
-  { label: 'This Year', getDates: () => { const d = new Date(); const s = new Date(d.getFullYear(), 0, 1); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+const PRESETS: { id: string; getDates: () => { s: string; e: string } }[] = [
+  { id: 'today', getDates: () => { const t = new Date().toISOString().split('T')[0]; return { s: t, e: t }; } },
+  { id: 'thisWeek', getDates: () => { const d = new Date(); const start = new Date(d); start.setDate(d.getDate() - d.getDay()); return { s: start.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+  { id: 'last7Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 6); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+  { id: 'thisMonth', getDates: () => { const d = new Date(); const s = new Date(d.getFullYear(), d.getMonth(), 1); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+  { id: 'last30Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 29); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+  { id: 'last90Days', getDates: () => { const d = new Date(); const s = new Date(d); s.setDate(d.getDate() - 89); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
+  { id: 'thisYear', getDates: () => { const d = new Date(); const s = new Date(d.getFullYear(), 0, 1); return { s: s.toISOString().split('T')[0], e: d.toISOString().split('T')[0] }; } },
 ];
 
 export default function ReportFilterBar({ onChange, showWarehouse, showStaff, showPaymentMode, warehouses = [], staff = [] }: ReportFilterBarProps) {
+  const t = useTranslations('Reports.filter');
   const todayDates = PRESETS[2].getDates(); // Last 7 Days default
   const [startDate, setStartDate] = useState(todayDates.s);
   const [endDate, setEndDate] = useState(todayDates.e);
@@ -39,7 +41,7 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
   const [warehouseId, setWarehouseId] = useState('');
   const [staffId, setStaffId] = useState('');
   const [paymentMode, setPaymentMode] = useState('');
-  const [activePreset, setActivePreset] = useState('Last 7 Days');
+  const [activePreset, setActivePreset] = useState('last7Days');
 
   const apply = useCallback((overrides?: Partial<ReportFilters>) => {
     onChange({
@@ -57,7 +59,7 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
     const { s, e } = preset.getDates();
     setStartDate(s);
     setEndDate(e);
-    setActivePreset(preset.label);
+    setActivePreset(preset.id);
     onChange({ startDate: s, endDate: e, groupBy, warehouseId: warehouseId || undefined, staffId: staffId || undefined, paymentMode: paymentMode || undefined });
   };
 
@@ -67,11 +69,11 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
       <div className="flex flex-wrap gap-2">
         {PRESETS.map(p => (
           <button
-            key={p.label}
+            key={p.id}
             onClick={() => applyPreset(p)}
-            className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all ${activePreset === p.label ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+            className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all ${activePreset === p.id ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
           >
-            {p.label}
+            {t(p.id as any)}
           </button>
         ))}
       </div>
@@ -87,7 +89,7 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
             onChange={e => { setStartDate(e.target.value); setActivePreset(''); }}
             className="text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 w-full"
           />
-          <span className="text-slate-400 font-bold text-sm">to</span>
+          <span className="text-slate-400 font-bold text-sm">{t('to')}</span>
           <input
             type="date"
             value={endDate}
@@ -102,15 +104,15 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
           onChange={e => { setGroupBy(e.target.value as any); }}
           className="text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
         >
-          <option value="day">Daily</option>
-          <option value="week">Weekly</option>
-          <option value="month">Monthly</option>
+          <option value="day">{t('daily')}</option>
+          <option value="week">{t('weekly')}</option>
+          <option value="month">{t('monthly')}</option>
         </select>
 
         {showWarehouse && warehouses.length > 0 && (
           <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
             className="text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
-            <option value="">All Warehouses</option>
+            <option value="">{t('allWarehouses')}</option>
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         )}
@@ -118,11 +120,11 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
         {showPaymentMode && (
           <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
             className="text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
-            <option value="">All Modes</option>
-            <option value="Cash">Cash</option>
-            <option value="UPI">UPI</option>
-            <option value="Card">Card</option>
-            <option value="Udhar">Udhar</option>
+            <option value="">{t('allModes')}</option>
+            <option value="Cash">{t('cash')}</option>
+            <option value="UPI">{t('upi')}</option>
+            <option value="Card">{t('card')}</option>
+            <option value="Udhar">{t('udhar')}</option>
           </select>
         )}
 
@@ -130,7 +132,7 @@ export default function ReportFilterBar({ onChange, showWarehouse, showStaff, sh
           onClick={() => apply()}
           className="px-5 py-2 bg-emerald-500 text-white text-sm font-bold rounded-xl hover:bg-emerald-400 transition-colors shadow-sm shadow-emerald-500/20"
         >
-          Apply
+          {t('apply')}
         </button>
       </div>
     </div>

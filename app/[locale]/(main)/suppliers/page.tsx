@@ -215,7 +215,7 @@ export default function SuppliersPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <ExportButton
             filename="suppliers"
-            title="Supplier List"
+            title={t('supplierListTitle') || 'Supplier List'}
             // 10 columns (incl. Address/Email, both long free text) crush to
             // an unreadable, letter-wrapping mess in portrait's ~180mm body
             // width — landscape's ~267mm gives them room to breathe.
@@ -228,18 +228,21 @@ export default function SuppliersPage() {
               { label: t('suppliersLabel'), value: String(summary.supplierCount) },
             ]}
             columns={[
-              { key: 'name', label: 'Supplier' },
-              { key: 'mobile', label: 'Mobile' },
-              { key: 'email', label: 'Email' },
-              { key: 'gst', label: 'GSTIN' },
-              { key: 'address', label: 'Address' },
-              { key: 'totalPurchased', label: 'Purchased', type: 'currency' },
-              { key: 'totalPaid', label: 'Paid', type: 'currency' },
-              { key: 'remaining', label: 'Remaining', type: 'currency' },
-              { key: 'txnCount', label: 'Bills', type: 'number' },
-              { key: 'status', label: 'Status' },
+              { key: 'name', label: t('supplierHeader') || 'Supplier' },
+              { key: 'mobile', label: t('colMobile') || 'Mobile' },
+              { key: 'email', label: t('colEmail') || 'Email' },
+              { key: 'gst', label: t('gstinLabel') || 'GSTIN' },
+              { key: 'address', label: t('addressLabel') || 'Address' },
+              { key: 'totalPurchased', label: t('purchasedHeader') || 'Purchased', type: 'currency' },
+              { key: 'totalPaid', label: t('paidHeader') || 'Paid', type: 'currency' },
+              { key: 'remaining', label: t('remainingHeader') || 'Remaining', type: 'currency' },
+              { key: 'txnCount', label: t('colBills') || 'Bills', type: 'number' },
+              { key: 'status', label: t('statusHeader') || 'Status' },
             ]}
-            data={suppliers}
+            data={suppliers.map(s => ({
+              ...s,
+              status: s.status === 'paid' ? t('statusPaid') : s.status === 'partial' ? t('statusPartial') : t('statusUnpaid'),
+            }))}
           />
           <button
             onClick={() => setShowAdd(true)}

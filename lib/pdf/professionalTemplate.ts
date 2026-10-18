@@ -67,6 +67,11 @@ export async function embedDevanagariFont(doc: any): Promise<void> {
   }
 }
 
+/** Returns true when the Devanagari font was successfully embedded this session. */
+export function isDevanagariAvailable(): boolean {
+  return devanagariAvailable === true;
+}
+
 /** Pick the right font for a text string: NotoDevanagari if it contains
  *  Devanagari script AND the font successfully embedded this session,
  *  otherwise helvetica. Assumes embedDevanagariFont() has been called. */

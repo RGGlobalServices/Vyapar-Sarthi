@@ -8,7 +8,7 @@ import {
   IndianRupee, TrendingUp, Warehouse, ArrowUp, ArrowDown,
   Tag, Trash2, Barcode as BarcodeIcon, Factory, Layers,
   GitBranch, ChevronRight, Circle, CheckCircle2, Clock,
-  Boxes, ArrowDownCircle, ArrowUpCircle, Scale, Copy, PackagePlus
+  Boxes, ArrowDownCircle, ArrowUpCircle, Scale, Copy, PackagePlus, AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -104,25 +104,35 @@ export default function ProductDetailsSheet({
 
   const fetchDetails = async () => {
     setLoading(true);
+    // 12-second timeout so the modal never hangs forever when the server is
+    // temporarily unavailable — AbortSignal.timeout() cancels the fetch and
+    // throws an AbortError, which lands in the catch below and shows the
+    // "Failed to load" state instead of spinning indefinitely.
+    const signal = AbortSignal.timeout(12000);
     try {
-      const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
+      const res = await api.get(`/products/${productId}/erp-details`, { ...shopIdHeader(shopId), signal });
       setData(res.data);
     } catch (err: any) {
-      // A transient DB-pool blip (connection limit momentarily hit) surfaces
-      // as a 500 here even for a perfectly real, already-saved product — one
-      // quick retry clears it in practice without making a genuine 404 (bad
-      // productId) wait around pointlessly.
-      const status = err?.response?.status;
-      if (status && status >= 500) {
-        await new Promise(r => setTimeout(r, 1200));
-        try {
-          const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
-          setData(res.data);
-        } catch (err2) {
-          console.error(err2);
-        }
+      // TimeoutError (AbortSignal.timeout fired) or AbortError (manual abort):
+      // silently let finally run — the "failed to load" state is shown instead.
+      const isAbortOrTimeout = err?.name === 'AbortError' || err?.name === 'TimeoutError';
+      if (isAbortOrTimeout) {
+        // expected when server is temporarily unavailable — no console noise
       } else {
-        console.error(err);
+        // A transient DB-pool blip (connection limit momentarily hit) surfaces
+        // as a 500 — one quick retry usually clears it.
+        const status = err?.response?.status;
+        if (status && status >= 500) {
+          await new Promise(r => setTimeout(r, 1200));
+          try {
+            const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
+            setData(res.data);
+          } catch (err2: any) {
+            if (err2?.name !== 'AbortError' && err2?.name !== 'TimeoutError') console.error(err2);
+          }
+        } else {
+          console.error(err);
+        }
       }
     } finally {
       setLoading(false);
@@ -147,109 +157,103 @@ export default function ProductDetailsSheet({
           product-list background bleed through around the modal edges. */}
       <div className="relative w-full max-w-3xl h-[100dvh] sm:h-auto sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-none sm:rounded-2xl shadow-2xl flex flex-col border-0 sm:border sm:border-slate-200 sm:dark:border-slate-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
 
-        {/* ── Header ── */}
-        <div className="flex-shrink-0 flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-              <Package size={20} className="text-emerald-500 dark:text-emerald-400" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white leading-tight truncate">
-                {data?.product?.name || (loading ? t('loading') : '—')}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
-                <Tag size={10} />
-                {data?.product?.barcode || data?.product?.sku || t('noSku')}
-                {data?.product?.category && (
-                  <span className="ml-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-                    {data.product.category}
-                  </span>
-                )}
-                {/* Unit the shopkeeper picked when adding this product (Kg/Gm/Piece/Bag/…
-                    per the business category's own unit list) — only shown when one was
-                    actually set, never a placeholder for products saved before units existed. */}
-                {data?.product?.baseUnit && (
-                  <span className="ml-1.5 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] px-2 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
-                    {t('unit') || 'Unit'}: {data.product.baseUnit}
-                  </span>
-                )}
-              </p>
-              {data?.product?.location && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
-                  <MapPin size={10} />
-                  {data.product.location}
+        {/* ── Header ── two-row layout so buttons never overlap the product name ── */}
+        <div className="flex-shrink-0 px-3 sm:px-5 pt-3 sm:pt-4 pb-2 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur space-y-2">
+
+          {/* Row 1: product icon + name + close */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Package size={18} className="text-emerald-500 dark:text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">
+                  {data?.product?.name || (loading ? t('loading') : '—')}
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                  <span className="flex items-center gap-0.5"><Tag size={9} />{data?.product?.barcode || data?.product?.sku || t('noSku')}</span>
+                  {data?.product?.category && (
+                    <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
+                      {data.product.category}
+                    </span>
+                  )}
+                  {data?.product?.baseUnit && (
+                    <span className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
+                      {t('unit') || 'Unit'}: {data.product.baseUnit}
+                    </span>
+                  )}
                 </p>
-              )}
+                {data?.product?.location && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
+                    <MapPin size={9} />{data.product.location}
+                  </p>
+                )}
+              </div>
             </div>
+            <button
+              onClick={onClose}
+              className="flex-shrink-0 p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
           </div>
 
-          {/* Action buttons — on mobile the text labels are hidden (icons
-              only) so all four fit inside the header without wrapping.
-              Tablet+ shows both icon + label. Close button always visible
-              and standalone. Was previously overflowing past the modal
-              edge on 360px screens which contributed to the "overlap"
-              client report. */}
-          <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Row 2: action buttons — flex-wrap so they reflow on any screen width */}
+          <div className="flex flex-wrap items-center gap-1">
             <button
               disabled={loading}
               onClick={() => setShowReceive(true)}
-              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
               title="Receive Stock"
             >
-              <Package size={13} /> <span className="hidden sm:inline">Receive Stock</span>
+              <Package size={12} /> Receive Stock
             </button>
             <button
               disabled={loading || !data?.product}
               onClick={() => setShowBarcodeModal(true)}
-              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
               title="Barcode / QR"
             >
-              <BarcodeIcon size={13} /> <span className="hidden sm:inline">Barcode / QR</span>
+              <BarcodeIcon size={12} /> Barcode / QR
             </button>
             {onDelete && (
               <button
                 disabled={loading}
                 onClick={() => setConfirmDelete(true)}
-                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-40"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-md hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-colors disabled:opacity-40"
                 title={t('delete') || 'Delete'}
               >
-                <Trash2 size={13} /> <span className="hidden sm:inline">{t('delete') || 'Delete'}</span>
+                <Trash2 size={12} /> {t('delete') || 'Delete'}
               </button>
             )}
             {onNewLot && (
               <button
                 disabled={loading}
                 onClick={() => onNewLot(data?.product)}
-                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/30 rounded-lg hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/30 rounded-md hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                 title="New lot / stock in"
               >
-                <PackagePlus size={13} /> <span className="hidden sm:inline">New lot</span>
+                <PackagePlus size={12} /> New lot
               </button>
             )}
             {onClone && (
               <button
                 disabled={loading}
                 onClick={() => onClone(data?.product)}
-                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-lg hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-md hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors disabled:opacity-50"
                 title="Clone — same product, new colour/size"
               >
-                <Copy size={13} /> <span className="hidden sm:inline">Clone</span>
+                <Copy size={12} /> Clone
               </button>
             )}
             <button
               disabled={loading}
               onClick={() => onEdit(data?.product)}
-              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
               title={t('edit')}
             >
-              <Edit size={13} /> <span className="hidden sm:inline">{t('edit')}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors ml-0.5 sm:ml-1"
-              title="Close"
-            >
-              <X size={18} />
+              <Edit size={12} /> {t('edit')}
             </button>
           </div>
         </div>
@@ -429,13 +433,21 @@ export default function ProductDetailsSheet({
                 // {color, size, stock, sellingPrice} shape so both schemas
                 // render through the one table below.
                 const nativeVariants = Array.isArray(data.product.variants) ? data.product.variants : [];
-                const legacyMap = nativeVariants.length === 0 ? parseSizeVariants(data.product.size_variants) : {};
-                const legacyPrices = nativeVariants.length === 0 ? parseSizePrices(data.product.metadata) : {};
+                // Always parse legacy size_variants — Vyapar/Dukan products store stock there.
+                // Native variants[] may exist but carry 0 stock if they were scaffolded at
+                // product-create time but never updated when stock was added via the legacy form.
+                const legacyMap = parseSizeVariants(data.product.size_variants);
+                const legacyPrices = parseSizePrices(data.product.metadata);
                 const legacyVariants = Object.entries(legacyMap).map(([key, qty]) => {
                   const { color, size } = splitVariantKey(key);
                   return { color, size, stock: Number(qty) || 0, sellingPrice: legacyPrices[key]?.sellingPrice };
                 });
-                const variants = nativeVariants.length > 0 ? nativeVariants : legacyVariants;
+                // Prefer native variants only when they carry actual stock; otherwise fall back
+                // to legacyVariants so the displayed per-variant qtys match the product total.
+                const nativeTotal = nativeVariants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0);
+                const variants = (nativeVariants.length > 0 && (nativeTotal > 0 || legacyVariants.length === 0))
+                  ? nativeVariants
+                  : legacyVariants;
                 if (variants.length === 0) return null;
                 // Liquor's variant grid is Bottle Type × Volume(ML), not an actual
                 // colour swatch — same underlying {color, size} shape (see
@@ -478,7 +490,13 @@ export default function ProductDetailsSheet({
                                   {v.color ? (
                                     isLiquor ? v.color : (
                                       <span className="flex items-center gap-1.5">
-                                        <span className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0" style={{ background: cssColor(v.color) }} />
+                                        <span
+                                          className="w-3 h-3 rounded-full shrink-0"
+                                          style={{
+                                            background: cssColor(v.color),
+                                            border: `1px solid ${cssColor(v.color) === '#ffffff' ? '#94a3b8' : 'rgba(0,0,0,0.15)'}`,
+                                          }}
+                                        />
                                         {v.color}
                                       </span>
                                     )
@@ -490,6 +508,19 @@ export default function ProductDetailsSheet({
                               </tr>
                             );
                           })}
+                          {variantTotal === 0 && (Number(data.totalStock) || 0) > 0 && (
+                            <tr>
+                              <td colSpan={4} className="px-3 pb-2 pt-1">
+                                <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-3 py-2.5">
+                                  <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-none" />
+                                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-snug">
+                                    <span className="font-semibold">{data.totalStock} {data.product.baseUnit || 'pcs'}</span>{' '}
+                                    {t('variantStockUnallocated') || 'stock exists but not allocated to individual variants. Use Stock In to assign per variant.'}
+                                  </p>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>

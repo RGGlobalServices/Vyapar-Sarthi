@@ -75,13 +75,13 @@ function resolveTxDate(pickedDate: string): string {
   return new Date(`${pickedDate}T12:00:00`).toISOString();
 }
 
-function relativeDate(iso: string) {
+function relativeDate(iso: string, t: (k: string, p?: Record<string, unknown>) => string) {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)     return 'Just now';
-  if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 172800) return 'Yesterday';
-  if (diff < 604800) return `${Math.floor(diff / 86400)} days ago`;
+  if (diff < 60)     return t('relJustNow');
+  if (diff < 3600)   return t('relMinutesAgo', { n: Math.floor(diff / 60) });
+  if (diff < 86400)  return t('relHoursAgo', { n: Math.floor(diff / 3600) });
+  if (diff < 172800) return t('relYesterday');
+  if (diff < 604800) return t('relDaysAgo', { n: Math.floor(diff / 86400) });
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
@@ -514,7 +514,7 @@ export default function UdharPage() {
         setAddCustomerSuccess(false);
       }, 1500);
     } catch {
-      setCustError('Failed to add customer.');
+      setCustError(t('addCustomerFailed'));
     } finally {
       setAddingCustomer(false);
     }
@@ -541,7 +541,7 @@ export default function UdharPage() {
       setSelectedIds(new Set());
       setSelectMode(false);
     } catch (err) {
-      alert('Failed to delete some customers.');
+      alert(t('bulkDeleteFailed'));
     } finally {
       setBulkCustomerDeleting(false);
       setConfirmBulkCustomerDelete(false);
@@ -569,7 +569,7 @@ export default function UdharPage() {
         await fetchCustomers();
         setSelectedTxIds(new Set());
       } catch (err) {
-        alert('Failed to delete some transactions.');
+        alert(t('bulkTxDeleteFailed'));
       } finally {
         setTxBulkDeleting(false);
       }
@@ -865,16 +865,16 @@ export default function UdharPage() {
           <UModal title={t('setPaymentReminderTitle')} icon={<AlarmClock size={17} className="text-amber-400" />} onClose={() => setModal(null)}>
             <form onSubmit={saveAutoReminder} className="space-y-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg px-4 py-2 text-sm text-slate-300">
-                Customer: <span className="font-bold text-slate-900 dark:text-white">{customer.name}</span>
-                <span className="ml-2 text-orange-400 font-bold">₹{due.toLocaleString('en-IN')} due</span>
+                {t('reminderForCustomer')} <span className="font-bold text-slate-900 dark:text-white">{customer.name}</span>
+                <span className="ml-2 text-orange-400 font-bold">₹{due.toLocaleString('en-IN')} {t('reminderAmountDue')}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quick Select:</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('quickSelectLabel')}</span>
                   {[
-                    { label: 'Tomorrow', days: 1 },
-                    { label: '3 Days', days: 3 },
-                    { label: '1 Week', days: 7 },
+                    { label: t('tomorrow'), days: 1 },
+                    { label: t('threeDays'), days: 3 },
+                    { label: t('oneWeek'), days: 7 },
                   ].map(preset => (
                     <button key={preset.label} type="button"
                       onClick={() => {
@@ -890,14 +890,14 @@ export default function UdharPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Date</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">{t('dateLabel')}</label>
                     <div className="relative">
                       <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
                       <input type="date" required className={cn(inp, 'pl-10 text-slate-700 dark:text-slate-300 font-semibold focus:ring-orange-500 cursor-pointer w-full appearance-none min-h-[42px]')} value={reminderForm.date} onChange={e => setReminderForm(f => ({ ...f, date: e.target.value }))} />
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Time</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">{t('timeLabel')}</label>
                     <div className="relative">
                       <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
                       <input type="time" required className={cn(inp, 'pl-10 text-slate-700 dark:text-slate-300 font-semibold focus:ring-orange-500 cursor-pointer w-full appearance-none min-h-[42px]')} value={reminderForm.time} onChange={e => setReminderForm(f => ({ ...f, time: e.target.value }))} />
@@ -905,9 +905,9 @@ export default function UdharPage() {
                   </div>
                 </div>
               </div>
-              <UField label="Notification Channel">
+              <UField label={t('notifChannelLabel')}>
                 <div className="flex gap-2">
-                  {[{ v: 'whatsapp', label: 'WhatsApp', icon: MessageSquare }, { v: 'email', label: 'Email', icon: Mail }, { v: 'app', label: 'Notify Me', icon: Bell }].map(({ v, label, icon: Icon }) => (
+                  {[{ v: 'whatsapp', label: t('whatsAppOption'), icon: MessageSquare }, { v: 'email', label: t('emailOption'), icon: Mail }, { v: 'app', label: t('notifyMeOption'), icon: Bell }].map(({ v, label, icon: Icon }) => (
                     <button key={v} type="button"
                       onClick={() => setReminderForm(f => ({ ...f, channel: v }))}
                       className={cn('flex-1 flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border text-xs font-bold transition-all',
@@ -921,11 +921,11 @@ export default function UdharPage() {
                   ))}
                 </div>
               </UField>
-              <UField label="Custom Message (optional)">
+              <UField label={t('customMessageLabel')}>
                 <textarea rows={2} className={cn(inp, 'resize-none text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:border-orange-500/50 focus:border-orange-500')} placeholder={`Reminder: ₹${due.toLocaleString('en-IN')} is due`}
                   value={reminderForm.message} onChange={e => setReminderForm(f => ({ ...f, message: e.target.value }))} />
               </UField>
-              <UActions onCancel={() => setModal(null)} submitLabel={savingReminder ? 'Saving…' : 'Set Reminder'} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50 font-bold" />
+              <UActions onCancel={() => setModal(null)} submitLabel={savingReminder ? t('savingBtn') : t('setReminderBtn')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50 font-bold" />
             </form>
           </UModal>
         )}
@@ -962,15 +962,15 @@ export default function UdharPage() {
               </div>
               <div className="flex gap-3 w-full">
                 <button onClick={handleShareRecentTx} className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
-                  <Send size={18} /> Share Receipt
+                  <Send size={18} /> {t('shareReceiptBtn')}
                 </button>
                 <button onClick={() => setRecentTx(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold transition-colors">
-                  Done
+                  {t('doneBtn')}
                 </button>
               </div>
               {recentTx.tx.billNumber && (
                 <Link href={`/billing/invoices/${recentTx.tx.billNumber}`} className="mt-3 w-full bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
-                  <FileText size={18} /> View Original Bill
+                  <FileText size={18} /> {t('viewOriginalBillBtn')}
                 </Link>
               )}
             </div>
@@ -996,7 +996,7 @@ export default function UdharPage() {
           {!canAddUdharCustomer(profile.subscriptionPlan, customers.length) && (
             <a href={`/${locale}/payment?plan=vyapar`}
               className="mt-1 inline-flex items-center gap-1.5 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 px-3 py-1 rounded-full hover:bg-indigo-500/20 transition-colors font-semibold">
-              Limit reached · Upgrade to Vyapar for unlimited customers →
+              {t('limitReachedUpgrade')}
             </a>
           )}
         </div>
@@ -1005,24 +1005,24 @@ export default function UdharPage() {
             <>
               <button onClick={() => setModal('exportReport')}
                 className="px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
-                <Download size={16} /> Export
+                <Download size={16} /> {t('exportBtn')}
               </button>
               <button
                 onClick={() => { setSelectMode(s => !s); setSelectedIds(new Set()); }}
                 className={cn('px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all',
                   selectMode ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-900 dark:text-white'
                 )}>
-                {selectMode ? 'Cancel' : 'Select'}
+                {selectMode ? t('cancelSelectBtn') : t('selectBtn')}
               </button>
               {selectMode && selectedIds.size > 0 && (
                 <>
                   <button onClick={() => setModal('bulkRemind')}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-500 text-slate-900 font-bold text-sm active:scale-95">
-                    <Send size={15} /> Remind ({selectedIds.size})
+                    <Send size={15} /> {t('remindCount', { count: selectedIds.size })}
                   </button>
                   <button onClick={() => setConfirmBulkCustomerDelete(true)}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-sm active:scale-95">
-                    <Trash2 size={15} /> Delete ({selectedIds.size})
+                    <Trash2 size={15} /> {t('deleteCount', { count: selectedIds.size })}
                   </button>
                 </>
               )}
@@ -1034,7 +1034,7 @@ export default function UdharPage() {
               ) : (
                 <a href={`/${locale}/payment?plan=vyapar`}
                   className="bg-indigo-500 text-slate-900 dark:text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-400 transition-colors text-sm active:scale-95">
-                  <UserPlus size={16} /> Upgrade for more customers
+                  <UserPlus size={16} /> {t('upgradeMoreCustomers')}
                 </a>
               )}
             </>
@@ -1066,9 +1066,9 @@ export default function UdharPage() {
               <CardContent className="p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-1.5 h-5 bg-orange-500 rounded-full" />
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wide">Top Debtors</h2>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wide">{t('topDebtors')}</h2>
                 </div>
-                <TopProductsPieChart items={insightData.items} total={insightData.total} currency={insightData.currency} valueLabel="Udhar Due" />
+                <TopProductsPieChart items={insightData.items} total={insightData.total} currency={insightData.currency} valueLabel={t('udharDueLabel')} />
               </CardContent>
             </Card>
           )}
@@ -1079,10 +1079,10 @@ export default function UdharPage() {
               <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm text-blue-400 font-semibold">
                 {selectedIds.size === filtered.filter(c => totalDue(c) > 0).length
                   ? <CheckSquare size={16} /> : <Square size={16} />}
-                Select All ({filtered.filter(c => totalDue(c) > 0).length} with dues)
+                {t('selectAllWithDues', { count: filtered.filter(c => totalDue(c) > 0).length })}
               </button>
               {selectedIds.size > 0 && (
-                <span className="text-xs text-slate-400">{selectedIds.size} selected</span>
+                <span className="text-xs text-slate-400">{t('selectedCount', { count: selectedIds.size })}</span>
               )}
             </div>
           )}
@@ -1100,11 +1100,11 @@ export default function UdharPage() {
               value={sortOrder}
               onChange={e => setSortOrder(e.target.value)}
             >
-              <option value="new_to_old">Recently Added</option>
-              <option value="old_to_new">Oldest Added</option>
-              <option value="a_to_z">Alphabetical (A to Z)</option>
-              <option value="z_to_a">Alphabetical (Z to A)</option>
-              <option value="recent_tx">Recent Transactions</option>
+              <option value="new_to_old">{t('sortRecentlyAdded')}</option>
+              <option value="old_to_new">{t('sortOldestAdded')}</option>
+              <option value="a_to_z">{t('sortAtoZ')}</option>
+              <option value="z_to_a">{t('sortZtoA')}</option>
+              <option value="recent_tx">{t('sortRecentTx')}</option>
             </select>
           </div>
 
@@ -1163,7 +1163,7 @@ export default function UdharPage() {
                         <p className="text-[10px] text-slate-500 uppercase font-bold">{t('lastActivity')}</p>
                         <div className="flex items-center justify-end gap-1 text-slate-400 mt-0.5">
                           <Calendar size={11} />
-                          <span className="text-xs">{lastTx ? relativeDate(lastTx.date) : t('none')}</span>
+                          <span className="text-xs">{lastTx ? relativeDate(lastTx.date, t as any) : t('none')}</span>
                         </div>
                       </div>
                     </div>
@@ -1175,7 +1175,7 @@ export default function UdharPage() {
               loading ? (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
                   <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
-                  <span className="text-sm">Loading khata…</span>
+                  <span className="text-sm">{t('loadingKhata')}</span>
                 </div>
               ) : (
                 <div className="col-span-3 py-16 text-center text-slate-500 text-sm">{t('noCustomers')}</div>
@@ -1199,8 +1199,8 @@ export default function UdharPage() {
                     <Store className="w-9 h-9 text-slate-600" />
                   </div>
                   <div className="text-center">
-                    <h3 className="text-base font-bold text-slate-300 mb-1">No Dukandars Yet</h3>
-                    <p className="text-sm text-slate-500 max-w-xs">Add dukandars from the Dukandar page to track credit here.</p>
+                    <h3 className="text-base font-bold text-slate-300 mb-1">{t('noDukandarsYet')}</h3>
+                    <p className="text-sm text-slate-500 max-w-xs">{t('noDukandarsDesc')}</p>
                   </div>
                 </div>
               ) : (
@@ -1208,9 +1208,9 @@ export default function UdharPage() {
                   {/* Summary strip */}
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: 'Pending', value: `₹${Object.values(dukandarSummary).reduce((s: number, v: any) => s + (v.pending || 0), 0).toLocaleString('en-IN')}`, color: 'text-red-400' },
-                      { label: 'Received', value: `₹${Object.values(dukandarSummary).reduce((s: number, v: any) => s + (v.paid || 0), 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
-                      { label: 'Dukandars', value: String(dukandars.length), color: 'text-blue-400' },
+                      { label: t('dukandarPending'), value: `₹${Object.values(dukandarSummary).reduce((s: number, v: any) => s + (v.pending || 0), 0).toLocaleString('en-IN')}`, color: 'text-red-400' },
+                      { label: t('dukandarReceived'), value: `₹${Object.values(dukandarSummary).reduce((s: number, v: any) => s + (v.paid || 0), 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
+                      { label: t('dukandarCount'), value: String(dukandars.length), color: 'text-blue-400' },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
                         <p className={cn('text-lg font-bold', color)}>{value}</p>
@@ -1239,13 +1239,13 @@ export default function UdharPage() {
                               <p className="text-xs text-slate-500 truncate">{d.email}</p>
                               {d.stockAlerts?.length > 0 && (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-semibold mt-0.5">
-                                  <Package size={10} /> {d.stockAlerts.length} low stock
+                                  <Package size={10} /> {t('lowStock', { count: d.stockAlerts.length })}
                                 </span>
                               )}
                             </div>
                             <div className="text-right mr-2 flex-shrink-0">
                               <p className="text-sm font-bold text-red-400">₹{s.pending.toLocaleString('en-IN')}</p>
-                              <p className="text-[11px] text-slate-500">pending</p>
+                              <p className="text-[11px] text-slate-500">{t('statusPendingLabel')}</p>
                             </div>
                             <ChevronRight className={cn('w-4 h-4 text-slate-600 flex-shrink-0 transition-transform', isOpen && 'rotate-90 text-emerald-400')} />
                           </button>
@@ -1255,9 +1255,9 @@ export default function UdharPage() {
                               {/* Stats */}
                               <div className="grid grid-cols-3 gap-3">
                                 {[
-                                  { label: 'Total Credit', value: `₹${s.total.toLocaleString('en-IN')}`, color: 'text-slate-300' },
-                                  { label: 'Pending', value: `₹${s.pending.toLocaleString('en-IN')}`, color: 'text-red-400' },
-                                  { label: 'Received', value: `₹${s.paid.toLocaleString('en-IN')}`, color: 'text-emerald-400' },
+                                  { label: t('totalCredit'), value: `₹${s.total.toLocaleString('en-IN')}`, color: 'text-slate-300' },
+                                  { label: t('dukandarPending'), value: `₹${s.pending.toLocaleString('en-IN')}`, color: 'text-red-400' },
+                                  { label: t('dukandarReceived'), value: `₹${s.paid.toLocaleString('en-IN')}`, color: 'text-emerald-400' },
                                 ].map(({ label, value, color }) => (
                                   <div key={label} className="bg-slate-100 dark:bg-slate-800/ rounded-xl p-3 text-center">
                                     <p className={cn('text-base font-bold', color)}>{value}</p>
@@ -1271,18 +1271,18 @@ export default function UdharPage() {
                                 <button
                                   onClick={() => { setCreditForm({ amount: '', description: '', dueDate: '' }); setCreditModal({ dukandar: d }); }}
                                   className="flex items-center justify-center gap-1.5 py-2.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-xl text-xs font-bold hover:bg-orange-500/20 transition-colors">
-                                  <Plus size={13} /> Add Credit
+                                  <Plus size={13} /> {t('addCreditBtn')}
                                 </button>
                                 <button
                                   onClick={() => sendDukandarWhatsApp(d, s.pending)}
                                   disabled={s.pending <= 0}
                                   className="flex items-center justify-center gap-1.5 py-2.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl text-xs font-bold hover:bg-green-500/20 transition-colors disabled:opacity-40">
-                                  <Send size={13} /> WhatsApp
+                                  <Send size={13} /> {t('whatsAppOption')}
                                 </button>
                                 <button
                                   onClick={() => { loadDukandars(); toggleDukandar(d.id); }}
                                   className="flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-400 rounded-xl text-xs font-bold hover:bg-slate-700 transition-colors">
-                                  <ArrowRight size={13} /> Refresh
+                                  <ArrowRight size={13} /> {t('refreshBtn')}
                                 </button>
                               </div>
 
@@ -1290,10 +1290,10 @@ export default function UdharPage() {
                               {loadingCreditsFor === d.id ? (
                                 <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-emerald-500" /></div>
                               ) : credits.length === 0 ? (
-                                <div className="py-4 text-center text-sm text-slate-500">No credit records yet</div>
+                                <div className="py-4 text-center text-sm text-slate-500">{t('noCreditRecords')}</div>
                               ) : (
                                 <div className="space-y-2">
-                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Credit History</p>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">{t('creditHistoryLabel')}</p>
                                   {credits.map((c: any) => {
                                     const isOverdue = c.dueDate && new Date(c.dueDate) < new Date() && c.status === 'pending';
                                     return (
@@ -1308,21 +1308,21 @@ export default function UdharPage() {
                                           <div className="flex items-center gap-2">
                                             <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
                                               c.status === 'pending' ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400')}>
-                                              {c.status}
+                                              {c.status === 'pending' ? t('statusPendingLabel') : t('statusPaidLabel')}
                                             </span>
                                             {c.status === 'pending' && (
                                               <button
                                                 onClick={() => handleMarkPaid(c.id, d.id)}
                                                 disabled={markingPaidId === c.id}
                                                 className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/40 transition-colors disabled:opacity-50">
-                                                {markingPaidId === c.id ? '…' : '✓ Paid'}
+                                                {markingPaidId === c.id ? '…' : t('markPaidBtn')}
                                               </button>
                                             )}
                                           </div>
                                         </div>
                                         <div className="flex flex-wrap gap-x-3 text-xs text-slate-500">
                                           {c.createdAt && <span className="flex items-center gap-1"><Calendar size={11} />{new Date(c.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
-                                          {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {fmtDate(c.dueDate)}</span>}
+                                          {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />{t('dueDateLabel')} {fmtDate(c.dueDate)}</span>}
                                         </div>
                                         {c.items?.length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-2">
@@ -1367,8 +1367,8 @@ export default function UdharPage() {
                   {/* Totals */}
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { label: 'Total Pending', value: `₹${myDues.filter(d => d.status === 'pending').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-red-400' },
-                      { label: 'Total Paid', value: `₹${myDues.filter(d => d.status === 'paid').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
+                      { label: t('totalPendingLabel'), value: `₹${myDues.filter(d => d.status === 'pending').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-red-400' },
+                      { label: t('totalPaidLabel'), value: `₹${myDues.filter(d => d.status === 'paid').reduce((s: number, d: any) => s + d.amount, 0).toLocaleString('en-IN')}`, color: 'text-emerald-400' },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
                         <p className={cn('text-lg font-bold', color)}>{value}</p>
@@ -1391,7 +1391,7 @@ export default function UdharPage() {
                             </div>
                             <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full uppercase',
                               c.status === 'pending' ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400')}>
-                              {c.status}
+                              {c.status === 'pending' ? t('statusPendingLabel') : t('statusPaidLabel')}
                             </span>
                           </div>
                           <p className={cn('text-2xl font-black mb-2', c.status === 'pending' ? 'text-red-400' : 'text-emerald-400')}>
@@ -1400,7 +1400,7 @@ export default function UdharPage() {
                           {c.description && <p className="text-xs text-slate-400 mb-2">{c.description}</p>}
                           <div className="flex flex-wrap gap-x-4 text-xs text-slate-500">
                             {c.createdAt && <span className="flex items-center gap-1"><Calendar size={11} />{fmtDate(c.createdAt)}</span>}
-                            {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />Due: {fmtDate(c.dueDate)}</span>}
+                            {c.dueDate && <span className={cn('flex items-center gap-1', isOverdue && 'text-red-400')}><Clock size={11} />{t('dueDateLabel')} {fmtDate(c.dueDate)}</span>}
                           </div>
                           {c.items?.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
@@ -1420,18 +1420,18 @@ export default function UdharPage() {
 
           {/* Add Credit Modal */}
           {creditModal && (
-            <UModal title={`Add Credit — ${creditModal.dukandar.shopName || creditModal.dukandar.name}`} icon={<Plus size={17} className="text-orange-400" />} onClose={() => setCreditModal(null)}>
+            <UModal title={t('addCreditModalTitle', { name: creditModal.dukandar.shopName || creditModal.dukandar.name })} icon={<Plus size={17} className="text-orange-400" />} onClose={() => setCreditModal(null)}>
               <form onSubmit={handleAddCredit} className="space-y-4">
-                <UField label="Amount (₹)">
+                <UField label={t('amountWithCurrency')}>
                   <input type="number" min="1" required inputMode="numeric" className={inp} placeholder="0" value={creditForm.amount} onChange={e => setCreditForm(f => ({ ...f, amount: e.target.value }))} />
                 </UField>
-                <UField label="Description / Items">
+                <UField label={t('descriptionItemsLabel')}>
                   <input className={inp} placeholder={t('descriptionPlaceholder')} value={creditForm.description} onChange={e => setCreditForm(f => ({ ...f, description: e.target.value }))} />
                 </UField>
-                <UField label="Due Date (optional)">
+                <UField label={t('dueDateOptionalLabel')}>
                   <input type="date" className={inp} value={creditForm.dueDate} onChange={e => setCreditForm(f => ({ ...f, dueDate: e.target.value }))} />
                 </UField>
-                <UActions onCancel={() => setCreditModal(null)} submitLabel={creditSaving ? 'Saving…' : 'Add Credit'} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50" />
+                <UActions onCancel={() => setCreditModal(null)} submitLabel={creditSaving ? t('savingBtn') : t('addCreditBtn')} submitCls="bg-orange-500 text-slate-900 hover:bg-orange-400 disabled:opacity-50" />
               </form>
             </UModal>
           )}
@@ -1446,7 +1446,7 @@ export default function UdharPage() {
               <div className="w-16 h-16 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mb-4 animate-bounce">
                 <Check size={32} />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Successfully Added!</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t('successfullyAdded')}</h3>
             </div>
           ) : (
             <form onSubmit={handleAddCustomer} className="space-y-4">
@@ -1476,12 +1476,12 @@ export default function UdharPage() {
 
     {/* Bulk Remind Modal */}
       {modal === 'bulkRemind' && (
-        <UModal title={`Send Reminder to ${selectedIds.size} customers`} icon={<Send size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
+        <UModal title={t('sendReminderToCount', { count: selectedIds.size })} icon={<Send size={17} className="text-emerald-400" />} onClose={() => setModal(null)}>
           <div className="space-y-4">
-            <p className="text-sm text-slate-400">Choose how to send the reminder:</p>
+            <p className="text-sm text-slate-400">{t('chooseReminderMethod')}</p>
             <div className="flex gap-2">
-              {[{ v: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, color: 'text-green-400', bg: 'bg-green-500/15 border-green-500/40' },
-                { v: 'email', label: 'Email', icon: Mail, color: 'text-blue-400', bg: 'bg-blue-500/15 border-blue-500/40' }].map(({ v, label, icon: Icon, color, bg }) => (
+              {[{ v: 'whatsapp', label: t('whatsAppOption'), icon: MessageSquare, color: 'text-green-400', bg: 'bg-green-500/15 border-green-500/40' },
+                { v: 'email', label: t('emailOption'), icon: Mail, color: 'text-blue-400', bg: 'bg-blue-500/15 border-blue-500/40' }].map(({ v, label, icon: Icon, color, bg }) => (
                 <button key={v} onClick={() => setBulkChannel(v as any)}
                   className={cn('flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-bold transition-all',
                     bulkChannel === v ? cn(bg, color) : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400'
@@ -1499,10 +1499,10 @@ export default function UdharPage() {
               ))}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setModal(null)} className="flex-1 py-3 bg-slate-50 dark:bg-slate-800 text-slate-300 rounded-xl font-medium text-sm">Cancel</button>
+              <button onClick={() => setModal(null)} className="flex-1 py-3 bg-slate-50 dark:bg-slate-800 text-slate-300 rounded-xl font-medium text-sm">{t('cancel')}</button>
               <button onClick={handleBulkRemind} disabled={bulkSending}
                 className="flex-1 py-3 bg-emerald-500 text-slate-900 font-bold rounded-xl text-sm disabled:opacity-50 flex items-center justify-center gap-2">
-                {bulkSending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Send size={15} /> Send All</>}
+                {bulkSending ? <><Loader2 className="w-4 h-4 animate-spin" /> {t('sendingBtn')}</> : <><Send size={15} /> {t('sendAllBtn')}</>}
               </button>
             </div>
           </div>
@@ -1513,39 +1513,39 @@ export default function UdharPage() {
       {modal === 'exportReport' && (
         <UModal title={t('exportUdharReportTitle')} icon={<Download size={17} className="text-blue-400" />} onClose={() => setModal(null)}>
           <form onSubmit={handleExport} className="space-y-5">
-            <UField label="Date Range">
+            <UField label={t('dateRangeLabel')}>
               <select className={inp} value={exportFilter.date} onChange={e => setExportFilter(f => ({ ...f, date: e.target.value }))}>
-                <option value="all">All Time</option>
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-                <option value="custom">Custom Range...</option>
+                <option value="all">{t('allTime')}</option>
+                <option value="today">{t('exportToday')}</option>
+                <option value="week">{t('exportThisWeek')}</option>
+                <option value="month">{t('exportThisMonth')}</option>
+                <option value="custom">{t('customRange')}</option>
               </select>
             </UField>
-            
+
             {exportFilter.date === 'custom' && (
               <div className="flex gap-3">
-                <UField label="Start Date">
+                <UField label={t('startDateLabel')}>
                   <input type="date" className={inp} required value={exportCustomDates.start} onChange={e => setExportCustomDates(d => ({ ...d, start: e.target.value }))} />
                 </UField>
-                <UField label="End Date">
+                <UField label={t('endDateLabel')}>
                   <input type="date" className={inp} required value={exportCustomDates.end} onChange={e => setExportCustomDates(d => ({ ...d, end: e.target.value }))} />
                 </UField>
               </div>
             )}
 
-            <UField label="Profiles">
+            <UField label={t('profilesLabel')}>
               <select className={inp} value={exportFilter.profile} onChange={e => setExportFilter(f => ({ ...f, profile: e.target.value }))}>
-                <option value="all">All Customers</option>
-                {selectedIds.size > 0 && <option value="selected">Selected Customers ({selectedIds.size})</option>}
-                <option value="specific">Specific Customer...</option>
+                <option value="all">{t('allCustomers')}</option>
+                {selectedIds.size > 0 && <option value="selected">{t('selectedCustomersCount', { count: selectedIds.size })}</option>}
+                <option value="specific">{t('specificCustomer')}</option>
               </select>
             </UField>
 
             {exportFilter.profile === 'specific' && (
-              <UField label="Select Customer">
+              <UField label={t('selectCustomerLabel')}>
                 <select className={inp} required value={exportSpecificProfile} onChange={e => setExportSpecificProfile(e.target.value)}>
-                  <option value="">-- Choose Customer --</option>
+                  <option value="">{t('chooseCustomer')}</option>
                   {customers.map(c => (
                     <option key={c.id} value={c.id}>{c.name} {c.mobile ? `(${c.mobile})` : ''}</option>
                   ))}
@@ -1553,9 +1553,9 @@ export default function UdharPage() {
               </UField>
             )}
 
-            <UField label="Export Format">
+            <UField label={t('exportFormatLabel')}>
               <div className="flex gap-2">
-                {[{ v: 'pdf', label: 'PDF Report' }, { v: 'csv', label: 'CSV/Excel' }].map(fmt => (
+                {[{ v: 'pdf', label: t('pdfReport') }, { v: 'csv', label: t('csvExcel') }].map(fmt => (
                   <button type="button" key={fmt.v} onClick={() => setExportFilter(f => ({ ...f, format: fmt.v }))}
                     className={cn('flex-1 py-2.5 rounded-xl border text-sm font-bold transition-all',
                       exportFilter.format === fmt.v ? 'bg-blue-500/15 border-blue-500/40 text-blue-400' : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-900 dark:text-white'
@@ -1566,7 +1566,7 @@ export default function UdharPage() {
               </div>
             </UField>
 
-            <UActions onCancel={() => setModal(null)} submitLabel={exporting ? 'Generating…' : 'Download Report'} submitCls="bg-blue-500 text-white hover:bg-blue-400" submitting={exporting} cancelLabel="Cancel" />
+            <UActions onCancel={() => setModal(null)} submitLabel={exporting ? t('generatingBtn') : t('downloadReport')} submitCls="bg-blue-500 text-white hover:bg-blue-400" submitting={exporting} cancelLabel={t('cancel')} />
           </form>
         </UModal>
       )}

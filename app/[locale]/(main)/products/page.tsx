@@ -240,8 +240,12 @@ function LegacyProductsUI() {
   }, [search]);
 
   const baseSwrKey = debouncedSearch.length > 1 ? `/products?q=${encodeURIComponent(debouncedSearch)}` : '/products';
-  const swrKey = activeShopId ? `${baseSwrKey}${baseSwrKey.includes('?') ? '&' : '?'}shop=${activeShopId}` : null;
+  const swrKey = activeShopId
+    ? `${baseSwrKey}${baseSwrKey.includes('?') ? '&' : '?'}shop=${activeShopId}` : null;
   const { data: products = [], mutate: mutateProducts, isLoading: loading } = useSWR<Product[]>(swrKey, fetchProductsMapped);
+
+  const effectiveProducts = products;
+  const effectiveLoading = loading;
   
   const [saving, setSaving] = useState(false);
   // `saving` (state) drives the disabled/spinner UI, but a real rapid
@@ -708,7 +712,7 @@ function LegacyProductsUI() {
   // because they share an owner, which is exactly what defaultCategories
   // (business-type-specific) and the /master-data categories (shop-scoped
   // server-side) below deliberately are NOT supposed to do.
-  const activeShopProducts = useMemo(() => products.filter(p => p.shopId === activeShopId), [products, activeShopId]);
+  const activeShopProducts = useMemo(() => effectiveProducts.filter(p => !activeShopId || p.shopId === activeShopId), [effectiveProducts, activeShopId]);
   const categories = useMemo(() => Array.from(new Set(activeShopProducts.map(p => p.category))).sort(), [activeShopProducts]);
 
   // Saved master categories + the ones already on products + business defaults.
@@ -719,7 +723,7 @@ function LegacyProductsUI() {
   );
   const activeFilters = [filterCategory, filterStatus].filter(Boolean).length;
 
-  const filtered = useMemo(() => products.filter(p => {
+  const filtered = useMemo(() => effectiveProducts.filter(p => {
     const safeSearch = (search || '').toLowerCase();
     const safeName = (p.name || '').toLowerCase();
     const safeCategory = (p.category || '').toLowerCase();
@@ -738,7 +742,7 @@ function LegacyProductsUI() {
       filterStatus === 'low' ? isLow : filterStatus === 'out' ? isOut :
       filterStatus === 'ok' ? (!isLow && !isOut) : true;
     return matchSearch && matchCat && matchStatus;
-  }), [products, search, filterCategory, filterStatus]);
+  }), [effectiveProducts, search, filterCategory, filterStatus]);
 
   // When All Shop Access is on, group into one table per shop (heading +
   // its own table) instead of one flat table with a Shop column — a single
@@ -753,9 +757,7 @@ function LegacyProductsUI() {
       map.get(key)!.push(p);
     }
     const groups = Array.from(map.entries()).map(([shopName, items]) => ({ shopName, items }));
-    // The shop currently switched to always leads the list — otherwise it
-    // lands wherever the Map's insertion order happens to put it, which
-    // isn't necessarily what the shopkeeper is looking at right now.
+    // The shop currently switched to always leads the list.
     groups.sort((a, b) => {
       const aActive = a.items[0]?.shopId === activeShopId;
       const bActive = b.items[0]?.shopId === activeShopId;
@@ -1173,7 +1175,7 @@ function LegacyProductsUI() {
   }
   async function doDelete(id: string | number) {
     try {
-      const target = products.find(p => p.id === id);
+      const target = effectiveProducts.find(p => p.id === id);
       await api.delete(`/products/${id}`, shopIdHeader(target?.shopId));
       invalidateProductCaches();
       toast.success('Product deleted');
@@ -1207,7 +1209,7 @@ function LegacyProductsUI() {
       // by each product's own shop and issue one request per group instead.
       const idsByShop = new Map<string, (string | number)[]>();
       for (const id of selectedProductIds) {
-        const shopId = products.find(p => p.id === id)?.shopId;
+        const shopId = effectiveProducts.find(p => p.id === id)?.shopId;
         const key = shopId || '';
         if (!idsByShop.has(key)) idsByShop.set(key, []);
         idsByShop.get(key)!.push(id);
@@ -1233,7 +1235,7 @@ function LegacyProductsUI() {
     try {
       const idsByShop = new Map<string, (string | number)[]>();
       for (const id of selectedProductIds) {
-        const shopId = products.find(p => p.id === id)?.shopId;
+        const shopId = effectiveProducts.find(p => p.id === id)?.shopId;
         const key = shopId || '';
         if (!idsByShop.has(key)) idsByShop.set(key, []);
         idsByShop.get(key)!.push(id);
@@ -1264,7 +1266,7 @@ function LegacyProductsUI() {
       // that belong to the shop in the request's header.
       const idsByShop = new Map<string, (string | number)[]>();
       for (const id of selectedProductIds) {
-        const shopId = products.find(p => p.id === id)?.shopId;
+        const shopId = effectiveProducts.find(p => p.id === id)?.shopId;
         const key = shopId || '';
         if (!idsByShop.has(key)) idsByShop.set(key, []);
         idsByShop.get(key)!.push(id);
@@ -1306,15 +1308,15 @@ function LegacyProductsUI() {
           <h1 className="text-2xl sm:text-3xl font-bold text-emerald-500">{t('title')}</h1>
           <p className="text-sm text-slate-400 mt-1 flex flex-wrap items-center gap-2">
             <span className="text-lg">{bizConfig.emoji}</span>
-            {bizConfig.label} Mode
+            {bizConfig.label} {t('modeLabel')}
             {bizConfig.hasExpiry && (
               <span className="text-xs bg-orange-500/15 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full font-medium">
-                Expiry Tracking ON
+                {t('expiryTrackingOn')}
               </span>
             )}
             {bizConfig.hasSizes && (
               <span className="text-xs bg-violet-500/15 text-violet-400 border border-violet-500/30 px-2 py-0.5 rounded-full font-medium">
-                Size Inventory ON
+                {t('sizeInventoryOn')}
               </span>
             )}
           </p>
@@ -1322,7 +1324,7 @@ function LegacyProductsUI() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="text-right">
             <p className="text-xs font-bold text-slate-400">
-              {products.length.toLocaleString('en-IN')} / Unlimited products
+              {products.length.toLocaleString('en-IN')} / {t('unlimitedProducts')}
             </p>
           </div>
           <ExportButton
@@ -1343,23 +1345,23 @@ function LegacyProductsUI() {
             data={products}
           />
           <button onClick={() => { setColors([]); setOuterColors([]); setSizeSelection([]); setSizeSelectionAuto(true); setSizeSystem('uk'); setPerSizePricing(false); setSizePrices({}); setShowAddModal(true); }}
-            className="bg-emerald-500 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
-            <Plus size={20} />{t('addProduct')}
+            className="bg-emerald-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-400 transition-colors">
+            <Plus size={16} />{t('addProduct')}
           </button>
           <button onClick={() => setShowBulkAdd(true)}
-            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            <Plus size={18} />Bulk Add / Variants
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            <Plus size={15} />{t('bulkAdd')}
           </button>
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => invalidateProductCaches()} />}
           {confirmDialog}
           <button onClick={() => setShowVariantCheck(true)} title="Find products whose size/colour stock does not match, or one model listed many times"
-            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            Check variants
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            {t('checkVariants')}
           </button>
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => invalidateProductCaches()} />}
           <button onClick={() => setShowLotReport(true)} title="Lot-wise stock, prices and sales"
-            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            Lots
+            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+            {t('lotsBtn')}
           </button>
           {showLotReport && <LotReportModal onClose={() => setShowLotReport(false)} />}
           {showVariantCheck && <VariantCleanupModal onClose={() => setShowVariantCheck(false)} onDone={() => invalidateProductCaches()} />}
@@ -1367,17 +1369,17 @@ function LegacyProductsUI() {
       </div>
 
       {/* View mode tabs */}
-      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+      <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm overflow-x-auto">
         {[
-          { key: 'all', label: 'All Products', icon: Package },
-          { key: 'unsynced', label: `Unsynced Items (${unsyncedItems.length})`, icon: AlertCircle },
-          ...(isWholesale ? [{ key: 'godown', label: 'By Godown', icon: Warehouse }] : []),
-          ...(allShops.length > 1 ? [{ key: 'shop', label: 'By Shop', icon: Store }] : []),
+          { key: 'all', label: t('allProducts'), icon: Package },
+          { key: 'unsynced', label: t('unsyncedItems', { count: unsyncedItems.length }), icon: AlertCircle },
+          ...(isWholesale ? [{ key: 'godown', label: t('byGodown'), icon: Warehouse }] : []),
+          ...(allShops.length > 1 ? [{ key: 'shop', label: t('byShop'), icon: Store }] : []),
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setViewMode(key as any)}
-            className={cn('flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all',
+            className={cn('flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap',
               viewMode === key ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-600 hover:text-slate-900 dark:text-slate-500 dark:hover:text-slate-300')}>
-            <Icon size={15} />{label}
+            <Icon size={13} />{label}
           </button>
         ))}
       </div>
@@ -1388,7 +1390,7 @@ function LegacyProductsUI() {
           <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between text-amber-600 dark:text-amber-400 text-sm">
             <div className="flex items-center gap-2 font-medium">
               <AlertCircle size={18} />
-              <span>These items were added manually during billing. Click <strong>Sync to Product Master</strong> to register them into permanent stock catalog.</span>
+              <span>{t('unsyncBannerPre')} <strong>{t('syncToProductMaster')}</strong> {t('unsyncBannerPost')}</span>
             </div>
           </div>
 
@@ -1397,15 +1399,15 @@ function LegacyProductsUI() {
           ) : unsyncedItems.length === 0 ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center shadow-sm">
               <Package className="w-12 h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-bold">No unsynced items found</p>
-              <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">All billing items are fully synced to master products.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-bold">{t('noUnsyncedTitle')}</p>
+              <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">{t('noUnsyncedDesc')}</p>
             </div>
           ) : (
             <>
               {selectedUnsynced.length > 0 && (
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 p-3 rounded-xl flex items-center justify-between gap-4">
                   <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
-                    {selectedUnsynced.length} selected
+                    {t('unsyncedSelected', { count: selectedUnsynced.length })}
                   </span>
                   <button
                     onClick={handleBulkSyncUnsynced}
@@ -1413,12 +1415,12 @@ function LegacyProductsUI() {
                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60"
                   >
                     {bulkSyncing ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                    Sync {selectedUnsynced.length} to Product Master
+                    {t('bulkSyncBtn', { count: selectedUnsynced.length })}
                   </button>
                 </div>
               )}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-                <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+                <div className="max-h-[calc(100vh-15rem)] overflow-auto [scrollbar-gutter:stable]">
                   <table className="w-full text-left text-sm">
                     <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
                       <tr>
@@ -1430,12 +1432,12 @@ function LegacyProductsUI() {
                             className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                           />
                         </th>
-                        <th className="px-5 py-3">Quick Item Name</th>
-                        <th className="px-5 py-3">Cost Price</th>
-                        <th className="px-5 py-3">Selling Price</th>
-                        <th className="px-5 py-3">Unit</th>
-                        <th className="px-5 py-3">Total Sold Qty</th>
-                        <th className="px-5 py-3 text-right">Action</th>
+                        <th className="px-5 py-3">{t('colQuickItemName')}</th>
+                        <th className="px-5 py-3">{t('colCostPrice')}</th>
+                        <th className="px-5 py-3">{t('colSellingPrice')}</th>
+                        <th className="px-5 py-3">{t('colUnit')}</th>
+                        <th className="px-5 py-3">{t('colTotalSoldQty')}</th>
+                        <th className="px-5 py-3 text-right">{t('colAction')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1460,7 +1462,7 @@ function LegacyProductsUI() {
                                 onClick={() => handleOpenSyncModal(uItem)}
                                 className="bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
                               >
-                                <Plus size={14} /> Sync to Product Master
+                                <Plus size={14} /> {t('syncToProductMaster')}
                               </button>
                               <button
                                 onClick={() => setDeleteUnsyncedKey(uItem.key)}
@@ -1491,14 +1493,14 @@ function LegacyProductsUI() {
                 <Trash2 size={18} className="text-red-500 dark:text-red-400" />
               </div>
               <div>
-                <p className="font-bold text-slate-900 dark:text-slate-100">Delete this unsynced item?</p>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">It will be removed from this list permanently and won't be added to the product catalog.</p>
+                <p className="font-bold text-slate-900 dark:text-slate-100">{t('deleteUnsyncedTitle')}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{t('deleteUnsyncedDesc')}</p>
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteUnsyncedKey(null)} disabled={deletingUnsynced} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60">Cancel</button>
+              <button onClick={() => setDeleteUnsyncedKey(null)} disabled={deletingUnsynced} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-2.5 rounded-xl font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60">{t('cancel')}</button>
               <button onClick={() => doDeleteUnsynced(deleteUnsyncedKey)} disabled={deletingUnsynced} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-400 disabled:opacity-60 flex items-center justify-center gap-1.5">
-                {deletingUnsynced && <Loader2 size={14} className="animate-spin" />} Delete
+                {deletingUnsynced && <Loader2 size={14} className="animate-spin" />} {t('deleteBtn')}
               </button>
             </div>
           </div>
@@ -1511,7 +1513,7 @@ function LegacyProductsUI() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Package className="text-emerald-500" size={20} /> Register Quick Item to Master Catalog
+                <Package className="text-emerald-500" size={20} /> {t('registerQuickItemTitle')}
               </h3>
               <button onClick={() => setSyncModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <X size={20} />
@@ -1520,7 +1522,7 @@ function LegacyProductsUI() {
 
             <form onSubmit={handleSyncSubmit} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Product Name</label>
+                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('productName')}</label>
                 <input
                   type="text" required
                   className={modalInp}
@@ -1531,7 +1533,7 @@ function LegacyProductsUI() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Category</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('category')}</label>
                   <input
                     type="text" required
                     className={modalInp}
@@ -1540,7 +1542,7 @@ function LegacyProductsUI() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Sub Category</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelSubCategory')}</label>
                   <input
                     type="text" placeholder={t('optional')}
                     className={modalInp}
@@ -1552,7 +1554,7 @@ function LegacyProductsUI() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Cost Price (₹)</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelCostPriceRs')}</label>
                   <input
                     type="number" step="any" required
                     className={modalInp}
@@ -1561,7 +1563,7 @@ function LegacyProductsUI() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">MRP (₹)</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelMrpRs')}</label>
                   <input
                     type="number" step="any" required
                     className={modalInp}
@@ -1570,7 +1572,7 @@ function LegacyProductsUI() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Sell Price (₹)</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelSellPriceRs')}</label>
                   <input
                     type="number" step="any" required
                     className={modalInp}
@@ -1582,7 +1584,7 @@ function LegacyProductsUI() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Unit</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelUnit')}</label>
                   <select
                     className={modalSel}
                     value={syncForm.baseUnit}
@@ -1592,7 +1594,7 @@ function LegacyProductsUI() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Initial Stock Qty</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelInitialStock')}</label>
                   <input
                     type="number" required
                     className={modalInp}
@@ -1604,7 +1606,7 @@ function LegacyProductsUI() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Barcode</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('barcode')}</label>
                   <input
                     type="text" placeholder={t('optional')}
                     className={modalInp}
@@ -1613,7 +1615,7 @@ function LegacyProductsUI() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">SKU</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase block mb-1">{t('labelSku')}</label>
                   <input
                     type="text" placeholder={t('optional')}
                     className={modalInp}
@@ -1629,7 +1631,7 @@ function LegacyProductsUI() {
                   onClick={() => setSyncModalOpen(false)}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
@@ -1637,7 +1639,7 @@ function LegacyProductsUI() {
                   className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 flex items-center gap-2 transition-all disabled:opacity-50"
                 >
                   {syncLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                  Save to Product Catalog
+                  {t('saveToCatalog')}
                 </button>
               </div>
             </form>
@@ -1685,7 +1687,7 @@ function LegacyProductsUI() {
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-200">{godownData.name}</span>
                 <span className="ml-auto text-xs font-mono text-slate-500">{godownData.godownCode || godownData.godown_code}</span>
               </div>
-              <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+              <div className="max-h-[calc(100vh-15rem)] overflow-auto [scrollbar-gutter:stable]">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
                     <tr>
@@ -1880,10 +1882,14 @@ function LegacyProductsUI() {
       return (
       <div key={group.shopName || 'all'} className="space-y-3">
         {group.shopName && (
-          <div className="flex items-center gap-2 px-1 pt-2">
-            <Store size={16} className="text-indigo-500 dark:text-indigo-400" />
-            <h3 className="text-sm font-black text-slate-900 dark:text-white">{group.shopName}</h3>
-            <span className="text-xs text-slate-500">({group.items.length})</span>
+          <div className="flex items-center gap-3 bg-indigo-50/80 dark:bg-indigo-500/10 border border-indigo-200/70 dark:border-indigo-500/25 rounded-xl px-4 py-3">
+            <div className="w-9 h-9 rounded-lg bg-indigo-500/15 dark:bg-indigo-500/20 flex items-center justify-center flex-none">
+              <Store size={17} className="text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">{group.shopName}</h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{group.items.length} {t('productsCount')}</p>
+            </div>
           </div>
         )}
       {/* Self-contained scrolling grid: the inner wrapper is the ONE scroll
@@ -1895,18 +1901,17 @@ function LegacyProductsUI() {
           header stays pinned vertically. Card keeps overflow-hidden for clean
           rounded corners; it's an ancestor, not the thead's scroll container,
           so it doesn't trap the sticky. */}
-      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        <CardContent className="p-0">
-          <div className="relative max-h-[calc(100vh-15rem)] overflow-auto">
-            {loading && (
+      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+          <div className="relative max-h-[calc(100vh-15rem)] overflow-auto [scrollbar-gutter:stable]">
+            {effectiveLoading && (
               <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm z-10 flex items-center justify-center">
                 <Loader2 className="animate-spin text-emerald-500" size={32} />
               </div>
             )}
-            <table className="w-full text-left">
-              <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 text-[11px] uppercase border-b border-slate-200 dark:border-slate-700">
                 <tr>
-                  <th className="px-6 py-4 w-10">
+                  <th className="px-3 py-2.5 w-10">
                     <input
                       type="checkbox"
                       checked={group.items.length > 0 && group.items.every(p => selectedProductIds.has(p.id))}
@@ -1921,24 +1926,24 @@ function LegacyProductsUI() {
                       className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                     />
                   </th>
-                  <th className="px-6 py-4">{t('colName')}</th>
-                  <th className="px-6 py-4">{t('colCategory')}</th>
-                  <th className="px-6 py-4">{t('colStock')}</th>
-                  <th className="px-6 py-4">{t('colMinStock')}</th>
-                  {groupBizConfig.hasExpiry && <th className="px-6 py-4">Expiry</th>}
-                  {groupBizConfig.hasBatch && <th className="px-6 py-4">Batch</th>}
-                  {groupBizConfig.hasModel && <th className="px-6 py-4">Model</th>}
-                  {groupBizConfig.hasWarranty && <th className="px-6 py-4">Warranty</th>}
-                  {groupBizConfig.hasShades && <th className="px-6 py-4">{['electric', 'electronics'].includes(groupBizConfig.type) ? 'Color' : 'Shade'}</th>}
-                  {groupBizConfig.hasGender && <th className="px-6 py-4">Gender</th>}
-                  {groupBizConfig.hasLiquorSpecs && <th className="px-6 py-4">Brand / ABV</th>}
-                  <th className="px-6 py-4 text-right">{t('colMRP')}</th>
-                  <th className="px-6 py-4 text-right">{t('colSelling')}</th>
-                  <th className="px-6 py-4 text-right">{t('colStockValue')}</th>
-                  <th className="px-6 py-4 text-right">{t('colProfit')}</th>
-                  <th className="px-6 py-4 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">Disc %</th>
-                  <th className="px-6 py-4">Location</th>
-                  <th className="px-6 py-4 text-center">{t('colActions')}</th>
+                  <th className="px-3 py-2.5">{t('colName')}</th>
+                  <th className="px-3 py-2.5">{t('colCategory')}</th>
+                  <th className="px-3 py-2.5">{t('colStock')}</th>
+                  <th className="px-3 py-2.5">{t('colMinStock')}</th>
+                  {groupBizConfig.hasExpiry && <th className="px-3 py-2.5">{t('colExpiry')}</th>}
+                  {groupBizConfig.hasBatch && <th className="px-3 py-2.5">{t('colBatch')}</th>}
+                  {groupBizConfig.hasModel && <th className="px-3 py-2.5">{t('colModel')}</th>}
+                  {groupBizConfig.hasWarranty && <th className="px-3 py-2.5">{t('colWarranty')}</th>}
+                  {groupBizConfig.hasShades && <th className="px-3 py-2.5">{['electric', 'electronics'].includes(groupBizConfig.type) ? t('colColor') : t('colShade')}</th>}
+                  {groupBizConfig.hasGender && <th className="px-3 py-2.5">{t('colGender')}</th>}
+                  {groupBizConfig.hasLiquorSpecs && <th className="px-3 py-2.5">{t('colBrandAbv')}</th>}
+                  <th className="px-3 py-2.5 text-right">{t('colMRP')}</th>
+                  <th className="px-3 py-2.5 text-right">{t('colSelling')}</th>
+                  <th className="px-3 py-2.5 text-right">{t('colStockValue')}</th>
+                  <th className="px-3 py-2.5 text-right">{t('colProfit')}</th>
+                  <th className="px-3 py-2.5 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">{t('colDisc')}</th>
+                  <th className="px-3 py-2.5">{t('colLocation')}</th>
+                  <th className="px-3 py-2.5 text-center">{t('colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2022,7 +2027,7 @@ function LegacyProductsUI() {
                   return (
                     <tr key={product.id} onClick={() => setSelectedProduct(product)}
                       className="group text-slate-900 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-all duration-200 cursor-pointer">
-                      <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedProductIds.has(product.id)}
@@ -2030,7 +2035,7 @@ function LegacyProductsUI() {
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 cursor-pointer"
                         />
                       </td>
-                      <td className="px-6 py-4 font-medium">
+                      <td className="px-3 py-2 font-medium">
                         <div className="flex items-center gap-2 flex-wrap">
                           {search
                             ? <HighlightText text={product.name} query={search} />
@@ -2039,85 +2044,32 @@ function LegacyProductsUI() {
                           {product.shade && <span className="text-xs text-pink-500 dark:text-pink-400 bg-pink-100 dark:bg-pink-500/15 px-1.5 py-0.5 rounded-full">{product.shade}</span>}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
-                      <td className="px-6 py-4">
-                        <div className={cn('flex items-center gap-1 font-bold', isOut ? 'text-red-400' : isLowStock ? 'text-orange-400' : 'text-emerald-400')}>
-                          {(groupBizConfig.hasSizes || Object.keys(sizeVariants).length > 0) ? (
-                            <div>
-                              <div className="text-sm font-bold flex items-center gap-1">
-                                {product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit || 'Unit'} locale={locale} /></span>
-                              </div>
-                              {Object.keys(sizeVariants).length > 0 && (() => {
-                                // If any keys are 3-part composites ("Colour / RAM / Storage"),
-                                // roll up per outer colour: "Blue: 91 · Black: 43" — much easier
-                                // to scan than the raw variant chips. Full breakdown stays a
-                                // hover away.
-                                const has3D = Object.keys(sizeVariants).some(k => k.split(' / ').length >= 3);
-                                // A tight 3-column grid keeps the row compact
-                                // when there are many variants — 9 chips render
-                                // as a neat 3×3, not a tall vertical stack. If
-                                // there are more, a "Show all" toggle expands
-                                // the grid in place (no truncation) so the
-                                // shopkeeper never has to hover a tooltip to
-                                // read what's hidden.
-                                if (has3D) {
-                                  const byColor: Record<string, { qty: number; parts: string[] }> = {};
-                                  for (const [k, q] of Object.entries(sizeVariants)) {
-                                    if (!q) continue;
-                                    const [color, ...rest] = k.split(' / ');
-                                    const bucket = byColor[color] ||= { qty: 0, parts: [] };
-                                    bucket.qty += q as number;
-                                    bucket.parts.push(`${rest.join(' / ')}: ${q}`);
-                                  }
-                                  return (
-                                    <VariantChipGrid
-                                      productId={String(product.id)}
-                                      entries={Object.entries(byColor).map(([color, { qty, parts }]) => ({
-                                        key: color,
-                                        label: `${color}: ${qty}`,
-                                        title: parts.join('\n'),
-                                        toneClass: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 text-[10px] font-bold',
-                                      }))}
-                                    />
-                                  );
-                                }
-                                const entries = Object.entries(sizeVariants).filter(([,q]) => q > 0);
-                                return (
-                                  <VariantChipGrid
-                                    productId={String(product.id)}
-                                    entries={entries.map(([sz, q]) => {
-                                      const sp = sizePriceData[sz];
-                                      const label = sp ? `${sz} ₹${sp.sellingPrice} (${q})` : `${sz}:${q}`;
-                                      return {
-                                        key: sz,
-                                        label,
-                                        title: sp ? `${sz} ₹${sp.sellingPrice} (${q})` : `${sz}: ${q}`,
-                                        toneClass: sp
-                                          ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[9px]'
-                                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[9px]',
-                                      };
-                                    })}
-                                  />
-                                );
-                              })()}
-                            </div>
-                          ) : (
-                            <>{product.stock} <span className="text-[10px] opacity-70 font-medium"><SmartTranslator text={product.unit} locale={locale} /></span></>
+                      <td className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400"><SmartTranslator text={product.category} locale={locale} /></td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={cn('font-bold text-sm', isOut ? 'text-red-500 dark:text-red-400' : isLowStock ? 'text-orange-500 dark:text-orange-400' : 'text-slate-800 dark:text-slate-200')}>
+                            {product.stock}
+                          </span>
+                          <span className="text-[11px] text-slate-400">{product.unit || 'pcs'}</span>
+                          {Object.keys(sizeVariants).length > 0 && (
+                            <span className="text-[10px] bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded font-medium">
+                              {Object.keys(sizeVariants).length} sizes
+                            </span>
                           )}
                           {(product.recentlyAdded ?? 0) > 0 && (
-                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded-full" title={t('recentlyAddedStock')}>
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded" title={t('recentlyAddedStock')}>
                               +{product.recentlyAdded}
                             </span>
                           )}
-                          {isLowStock && <AlertCircle size={14} />}
+                          {isLowStock && <AlertCircle size={13} className="text-orange-400" />}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{product.minStock}</td>
-                      {groupBizConfig.hasExpiry && <td className="px-6 py-4"><ExpiryBadge date={product.expiry_date} /></td>}
-                      {groupBizConfig.hasBatch && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
-                      {groupBizConfig.hasModel && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{product.minStock}</td>
+                      {groupBizConfig.hasExpiry && <td className="px-3 py-2"><ExpiryBadge date={product.expiry_date} /></td>}
+                      {groupBizConfig.hasBatch && <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
+                      {groupBizConfig.hasModel && <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
                       {groupBizConfig.hasWarranty && (
-                        <td className="px-6 py-4 text-xs">
+                        <td className="px-3 py-2 text-xs">
                           {product.warranty_months ? (
                             <span className="flex items-center gap-1 text-sky-500 dark:text-sky-400">
                               <ShieldCheck size={12} />{product.warranty_months}m
@@ -2125,41 +2077,41 @@ function LegacyProductsUI() {
                           ) : '—'}
                         </td>
                       )}
-                      {groupBizConfig.hasShades && <td className="px-6 py-4 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
-                      {groupBizConfig.hasGender && <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
+                      {groupBizConfig.hasShades && <td className="px-3 py-2 text-xs text-pink-500 dark:text-pink-400">{product.shade || '—'}</td>}
+                      {groupBizConfig.hasGender && <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{product.gender || '—'}</td>}
                       {groupBizConfig.hasLiquorSpecs && (
-                        <td className="px-6 py-4 text-xs text-slate-600 dark:text-slate-400">
+                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
                           {product.brand || '—'}
                           {(product.metadata as any)?.alcoholPercentage && <span className="ml-1 text-rose-500 dark:text-rose-400 font-semibold">· {(product.metadata as any).alcoholPercentage}%</span>}
                         </td>
                       )}
-                      <td className="px-6 py-4 text-right text-slate-500 dark:text-slate-400">
+                      <td className="px-3 py-2 text-right text-slate-500 dark:text-slate-400">
                         {hasPerSizePricing
                           ? (mrpRange
                               ? <span className="text-[11px] font-semibold text-violet-600 dark:text-violet-400" title="MRP range across variants">{mrpRange}</span>
                               : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size</span>)
                           : `₹${product.mrp?.toLocaleString('en-IN') ?? '—'}`}
                       </td>
-                      <td className="px-6 py-4 text-right font-bold">
+                      <td className="px-3 py-2 text-right font-bold">
                         {hasPerSizePricing
                           ? (sellingRange
                               ? <span className="text-[11px] text-violet-600 dark:text-violet-400" title="Selling price range across variants">{sellingRange}</span>
                               : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size ↕</span>)
                           : `₹${product.sellingPrice?.toLocaleString('en-IN') ?? '—'}`}
                       </td>
-                      <td className="px-6 py-4 text-right font-semibold">
+                      <td className="px-3 py-2 text-right font-semibold">
                         <span className={hasCost ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500'}>
                           {hasCost ? '' : '~'}₹{stockValue.toLocaleString('en-IN')}
                         </span>
                         {!hasCost && <span className="block text-[9px] text-slate-400 dark:text-slate-600 font-normal">add cost price</span>}
                       </td>
-                      <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
                         {profit !== null
                           ? <span className={cn('font-bold', profitColorClass(profitStatus))}>{profit}%</span>
                           : <button onClick={() => startEdit(product)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">set cost</button>
                         }
                       </td>
-                      <td className="px-6 py-4 text-sm text-right text-slate-500 dark:text-slate-400">
+                      <td className="px-3 py-2 text-right text-slate-500 dark:text-slate-400">
                         {(() => {
                           const mrp = Number(product.mrp) || 0;
                           const sp = Number(product.sellingPrice) || 0;
@@ -2169,28 +2121,28 @@ function LegacyProductsUI() {
                           return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − SP ₹${sp}`}>{pct.toFixed(1)}%</span>;
                         })()}
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{product.location || '—'}</td>
-                      <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity">
+                      <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{product.location || '—'}</td>
+                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity">
                           <button onClick={() => setQrProduct(product)} title={t('barcodeQrTitle')}
-                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
-                            <QrCode size={14} />
+                            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:bg-blue-100 dark:hover:bg-blue-500/15 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                            <QrCode size={13} />
                           </button>
                           <button onClick={() => setNewLotProduct(product)} title="New lot / stock in — same product at a new price"
-                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-sky-100 dark:hover:bg-sky-500/20 hover:text-sky-600 dark:hover:text-sky-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700">
-                            <PackagePlus size={14} />
+                            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:bg-sky-100 dark:hover:bg-sky-500/15 hover:text-sky-600 dark:hover:text-sky-400 transition-colors">
+                            <PackagePlus size={13} />
                           </button>
                           <button onClick={() => startClone(product)} title="Clone — same product, new colour/size"
-                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700">
-                            <Copy size={14} />
+                            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:bg-violet-100 dark:hover:bg-violet-500/15 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
+                            <Copy size={13} />
                           </button>
                           <button onClick={() => startEdit(product)} title={t('edit')}
-                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
-                            <Pencil size={14} />
+                            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:bg-emerald-100 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                            <Pencil size={13} />
                           </button>
                           <button onClick={() => setDeleteConfirmId(product.id)} title={t('delete')}
-                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-red-100 dark:hover:bg-red-500/20 hover:text-red-600 dark:hover:text-red-400 transition-all active:scale-90 border border-slate-200 dark:border-slate-700/50">
-                            <Trash2 size={14} />
+                            className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:bg-red-100 dark:hover:bg-red-500/15 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>
@@ -2198,14 +2150,14 @@ function LegacyProductsUI() {
                   );
                 })}
                 {group.items.length === 0 && !loading && (
-                  <tr><td colSpan={20} className="px-6 py-12 text-center text-slate-500">{t('noProducts')}</td></tr>
+                  <tr><td colSpan={20} className="px-4 py-10 text-center text-slate-500">{t('noProducts')}</td></tr>
                 )}
               </tbody>
               {group.items.length > 0 && (
                 <tfoot className="bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700">
                   <tr>
-                    <td className="px-6 py-3 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
-                    <td className="px-6 py-3 text-right text-amber-500 dark:text-amber-400 font-bold text-base" colSpan={2}>
+                    <td className="px-3 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase" colSpan={3}>{t('totalCost')}</td>
+                    <td className="px-3 py-2.5 text-right text-amber-500 dark:text-amber-400 font-bold" colSpan={2}>
                       ₹{group.items.reduce((sum: number, p: any) => {
                         const sizeVariants = parseSizeVariants(p.size_variants);
                         const sizePriceData = parseSizePrices(p.metadata);
@@ -2229,8 +2181,7 @@ function LegacyProductsUI() {
               )}
             </table>
           </div>
-        </CardContent>
-      </Card>
+      </div>
       </div>
       );
       })}
@@ -2311,7 +2262,7 @@ function LegacyProductsUI() {
                 </div>
                 {bizConfig.hasGender && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Gender</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('genderLabel')}</label>
                     <select className={modalSel} value={editForm.gender} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}>
                       {['Unisex', 'Men', 'Women', 'Boys', 'Girls', 'Kids'].map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
@@ -2325,7 +2276,7 @@ function LegacyProductsUI() {
                     regardless of which system it was originally entered in. */}
                 {bizConfig.type === 'shoes' && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Size System</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('sizeSystemLabel')}</label>
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 w-fit">
                       {(['uk', 'us', 'eu'] as const).map(sys => (
                         <button key={sys} type="button"
@@ -2709,7 +2660,7 @@ function LegacyProductsUI() {
 
                 <div className="mt-3">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Product Location <span className="font-medium normal-case text-slate-400">(optional)</span>
+                    {t('productLocation')} <span className="font-medium normal-case text-slate-400">({t('optional')})</span>
                   </label>
                   <LocalInput className={modalInp} placeholder="e.g. Shelf A3, Rack 2, Bin 14"
                     value={editForm.location} onCommit={v => setEditForm(f => ({ ...f, location: v }))} />
@@ -2720,11 +2671,11 @@ function LegacyProductsUI() {
               <div className="flex gap-4 pt-2">
                 <button type="button" onClick={() => { setShowEditModal(false); setEditProduct(null); }}
                   className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-all active:scale-95">
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 bg-emerald-500 text-white dark:text-slate-900 py-3 rounded-xl font-black transition-all active:scale-95 hover:bg-emerald-400 disabled:opacity-60 flex items-center justify-center gap-2">
-                  {saving ? <><Loader2 size={16} className="animate-spin" />Saving…</> : 'Save Changes'}
+                  {saving ? <><Loader2 size={16} className="animate-spin" />{t('saving')}</> : t('save')}
                 </button>
               </div>
             </form>
@@ -2820,7 +2771,7 @@ function LegacyProductsUI() {
                 {/* Gender — shoes/clothes */}
                 {bizConfig.hasGender && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Gender</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('genderLabel')}</label>
                     <select className={modalSel} value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
                       {['Unisex', 'Men', 'Women', 'Boys', 'Girls', 'Kids'].map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
@@ -2830,7 +2781,7 @@ function LegacyProductsUI() {
                     Edit modal for the full reasoning. */}
                 {bizConfig.type === 'shoes' && (
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Size System</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('sizeSystemLabel')}</label>
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 w-fit">
                       {(['uk', 'us', 'eu'] as const).map(sys => (
                         <button key={sys} type="button"
@@ -3246,7 +3197,7 @@ function LegacyProductsUI() {
 
                 <div className="mt-3">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Product Location <span className="font-medium normal-case text-slate-400">(optional)</span>
+                    {t('productLocation')} <span className="font-medium normal-case text-slate-400">({t('optional')})</span>
                   </label>
                   <LocalInput className={modalInp} placeholder="e.g. Shelf A3, Rack 2, Bin 14"
                     value={form.location} onCommit={v => setForm(f => ({ ...f, location: v }))} />
@@ -3258,7 +3209,7 @@ function LegacyProductsUI() {
               <section className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-1 h-4 rounded bg-blue-500" />
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Inventory Assignment</p>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t('inventoryAssignment')}</p>
                 </div>
 
                 {/* Shop selector */}
@@ -3338,7 +3289,7 @@ function LegacyProductsUI() {
                   className={`flex-1 bg-gradient-to-r ${
                     bizConfig.gradient || 'from-emerald-600 to-emerald-500'
                   } text-white py-3 rounded-xl font-black shadow-xl transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2`}>
-                  {saving ? <><Loader2 size={16} className="animate-spin" />Adding…</> : t('addProduct')}
+                  {saving ? <><Loader2 size={16} className="animate-spin" />{t('saving')}</> : t('addProduct')}
                 </button>
               </div>
             </form>
@@ -3492,7 +3443,7 @@ function LegacyProductsUI() {
           </div>
         </div>
       )}
-      </> /* end viewMode === 'all' */
+      </>
       )}
     </div>
   );

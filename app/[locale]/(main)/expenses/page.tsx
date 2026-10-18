@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { fmtDate } from '@/lib/utils';
 import useSWR from 'swr';
 import { useBusinessStore } from '@/lib/businessStore';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { Loader2, Plus, Receipt, Calendar, Truck, Handshake, Package, LayoutList } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -23,7 +24,17 @@ const SOURCE_CONFIG: Record<string, { label: string; cls: string; icon: any }> =
 
 export default function ExpensesPage() {
   const t = useTranslations('Expenses');
-  const activeShopId = useBusinessStore(s => s.activeShopId);
+  const { activeShopId, profile } = useBusinessStore();
+  const isMillPlan = isMillBillingPackage(profile?.subscriptionPlan);
+
+  // Translated label for each source value (used in both filter pills and table badges)
+  const srcLabel = (src: string) => {
+    if (src === 'manual') return t('srcManual');
+    if (src === 'freight') return t('srcFreight');
+    if (src === 'commission') return t('srcCommission');
+    if (src === 'hamali') return t('srcHamali');
+    return src;
+  };
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -172,7 +183,7 @@ export default function ExpensesPage() {
       {/* Source filter pills */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <LayoutList size={14} className="text-slate-400 shrink-0" />
-        {(['all', 'manual', 'freight', 'commission', 'hamali'] as SourceFilter[]).map(src => {
+        {(['all', 'manual', ...(isMillPlan ? ['freight', 'commission', 'hamali'] : [])] as SourceFilter[]).map(src => {
           const cfg = src === 'all' ? null : SOURCE_CONFIG[src];
           const count = sourceCounts[src] || 0;
           const active = sourceFilter === src;
@@ -187,7 +198,7 @@ export default function ExpensesPage() {
               }`}
             >
               {cfg && <cfg.icon size={11} />}
-              {src === 'all' ? 'All' : SOURCE_CONFIG[src].label}
+              {src === 'all' ? t('srcAll') : srcLabel(src)}
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>{count}</span>
             </button>
           );
@@ -211,7 +222,7 @@ export default function ExpensesPage() {
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {mode === 'all' ? t('filterAll') : mode === 'today' ? t('filterToday') : mode === 'yesterday' ? t('filterYesterday') : mode === 'week' ? 'This Week' : 'This Month'}
+              {mode === 'all' ? t('filterAll') : mode === 'today' ? t('filterToday') : mode === 'yesterday' ? t('filterYesterday') : mode === 'week' ? t('filterWeek') : t('filterMonth')}
             </button>
           ))}
           <div className="flex items-center gap-1.5">
@@ -314,7 +325,7 @@ export default function ExpensesPage() {
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
                   <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDate')}</th>
-                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Source</th>
+                  <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colSource')}</th>
                   <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colCategory')}</th>
                   <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colDescription')}</th>
                   <th className="px-5 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">{t('colMode')}</th>
@@ -333,7 +344,7 @@ export default function ExpensesPage() {
                       <td className="px-5 py-3.5">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${src.cls}`}>
                           <SrcIcon size={10} />
-                          {src.label}
+                          {srcLabel(expense.source)}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
@@ -366,18 +377,18 @@ export default function ExpensesPage() {
       {monthlyAnalytics.length > 0 && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
-            <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Monthly Breakdown</p>
+            <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">{t('monthlyBreakdown')}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-800/50">
                 <tr>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider">Month</th>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Manual</th>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Freight</th>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Commission</th>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Hamali</th>
-                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">Total</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider">{t('colMonth')}</th>
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">{t('srcManual')}</th>
+                  {isMillPlan && <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">{t('srcFreight')}</th>}
+                  {isMillPlan && <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">{t('srcCommission')}</th>}
+                  {isMillPlan && <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">{t('srcHamali')}</th>}
+                  <th className="px-4 py-2.5 text-slate-500 font-bold uppercase tracking-wider text-right">{t('colTotal')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -385,9 +396,9 @@ export default function ExpensesPage() {
                   <tr key={m.key} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                     <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200">{m.label}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.manual > 0 ? `₹${Math.round(m.bySource.manual).toLocaleString('en-IN')}` : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.freight > 0 ? `₹${Math.round(m.bySource.freight).toLocaleString('en-IN')}` : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.commission > 0 ? `₹${Math.round(m.bySource.commission).toLocaleString('en-IN')}` : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.hamali > 0 ? `₹${Math.round(m.bySource.hamali).toLocaleString('en-IN')}` : '—'}</td>
+                    {isMillPlan && <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.freight > 0 ? `₹${Math.round(m.bySource.freight).toLocaleString('en-IN')}` : '—'}</td>}
+                    {isMillPlan && <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.commission > 0 ? `₹${Math.round(m.bySource.commission).toLocaleString('en-IN')}` : '—'}</td>}
+                    {isMillPlan && <td className="px-4 py-3 text-right tabular-nums text-slate-600 dark:text-slate-400">{m.bySource.hamali > 0 ? `₹${Math.round(m.bySource.hamali).toLocaleString('en-IN')}` : '—'}</td>}
                     <td className="px-4 py-3 text-right tabular-nums font-black text-rose-600 dark:text-rose-400">₹{Math.round(m.total).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}

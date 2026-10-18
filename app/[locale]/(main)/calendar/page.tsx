@@ -327,7 +327,7 @@ export default function CalendarPage() {
       {/* Add/Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setModalOpen(false)}>
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">{editing ? (t('editEvent') || 'Edit Event') : (t('newEvent') || 'New Event')}</h3>
               <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-50 dark:bg-slate-800 text-slate-400"><X size={18} /></button>
@@ -356,7 +356,7 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelDate') || 'DATE'}</label>
                   <input type="date" value={form.eventDate} onChange={e => setForm({ ...form, eventDate: e.target.value })} className={inp + ' mt-1'} />
@@ -367,7 +367,7 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{t('labelCustomer') || 'CUSTOMER (OPTIONAL)'}</label>
                   <input value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder={t('placeholderCustomer') || 'Name'} className={inp + ' mt-1'} />

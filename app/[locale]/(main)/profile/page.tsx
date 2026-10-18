@@ -391,11 +391,11 @@ export default function ProfilePage() {
                 <input type="file" ref={signatureInputRef} onChange={handleSignatureUpload} disabled={uploadingSignature} accept="image/*" className="hidden" />
               </div>
               <div className="text-center">
-                <p className="font-bold text-slate-900 dark:text-slate-200">Authorized Signature</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Photo of your signature or shop stamp — prints on every bill</p>
+                <p className="font-bold text-slate-900 dark:text-slate-200">{t('authorizedSignature')}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{t('signatureDesc')}</p>
                 {!!shop?.signature_url && (
                   <button type="button" onClick={handleRemoveSignature} className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors mt-1">
-                    Remove
+                    {t('remove')}
                   </button>
                 )}
               </div>
@@ -441,7 +441,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Business Category</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('businessCategory')}</label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     {(() => {
@@ -485,20 +485,20 @@ export default function ProfilePage() {
                     onClick={() => setShowIndustryWizard(true)}
                     className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
                   >
-                    Not sure? Use the guided Category Picker →
+                    {t('categoryPickerHint')}
                   </button>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Package Type</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('packageType')}</label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <select disabled
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-500 dark:text-slate-400 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors opacity-80 cursor-not-allowed"
                       value={shop?.package_type || 'dukan'} onChange={e => setShop({ ...shop, package_type: e.target.value })}>
-                      <option value="dukan">Dukan Package</option>
-                      <option value="vyapar">Vyapar Package</option>
-                      <option value="wholesale">Udyog Package</option>
-                      <option value="badaudyog">Bada Udyog Package</option>
+                      <option value="dukan">{t('dukanPackage')}</option>
+                      <option value="vyapar">{t('vyaparPackage')}</option>
+                      <option value="wholesale">{t('udyogPackage')}</option>
+                      <option value="badaudyog">{t('badaUdyogPackage')}</option>
                     </select>
                   </div>
                 </div>
@@ -609,15 +609,17 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">FSSAI License No. <span className="normal-case font-normal text-slate-400">(optional — prints on bills)</span></label>
-                <div className="relative">
-                  <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                  <input type="text" placeholder="e.g. 11224567890123"
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
-                    value={shop?.fssai || ''} onChange={e => setShop({ ...shop, fssai: e.target.value })} />
+              {shop?.package_type === 'badaudyog' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">{t('fssaiLabel')} <span className="normal-case font-normal text-slate-400">{t('fssaiBillNote')}</span></label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input type="text" placeholder="e.g. 11224567890123"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
+                      value={shop?.fssai || ''} onChange={e => setShop({ ...shop, fssai: e.target.value })} />
+                  </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
@@ -637,7 +639,7 @@ export default function ProfilePage() {
                   }}
                   className="text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors"
                 >
-                  {emailOpen ? t('cancel') : 'Edit Email'}
+                  {emailOpen ? t('cancel') : t('editEmail')}
                 </button>
               </div>
             </CardHeader>
@@ -668,13 +670,13 @@ export default function ProfilePage() {
                 <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2">
                   {emailOk ? (
                     <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl px-4 py-3 text-sm">
-                      <CheckCircle size={15} /> Email address updated successfully!
+                      <CheckCircle size={15} /> {t('emailUpdateSuccess')}
                     </div>
                   ) : (
                     <form onSubmit={handleUpdateEmail} className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-slate-500 uppercase">New Email Address</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase">{t('newEmailLabel')}</label>
                           <div className="relative">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                             <input
@@ -689,14 +691,14 @@ export default function ProfilePage() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-slate-500 uppercase">Current Password</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase">{t('currentPassword')}</label>
                           <div className="relative">
                             <input
                               type={emailShowPwd ? 'text' : 'password'}
                               required
                               value={emailPassword}
                               onChange={e => { setEmailPassword(e.target.value); setEmailError(''); }}
-                              placeholder="Required for security"
+                              placeholder={t('requiredForSecurity')}
                               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 pr-10 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors"
                             />
                             <button
@@ -722,7 +724,7 @@ export default function ProfilePage() {
                           onClick={() => { setEmailOpen(false); setEmailError(''); }}
                           className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-slate-200"
                         >
-                          Cancel
+                          {t('cancel')}
                         </button>
                         <button
                           type="submit"
@@ -731,11 +733,11 @@ export default function ProfilePage() {
                         >
                           {emailLoading ? (
                             <>
-                              <Loader2 size={15} className="animate-spin" /> Updating Email…
+                              <Loader2 size={15} className="animate-spin" /> {t('updatingEmail')}
                             </>
                           ) : (
                             <>
-                              <Save size={15} /> Update Email Address
+                              <Save size={15} /> {t('updateEmailBtn')}
                             </>
                           )}
                         </button>
@@ -756,76 +758,76 @@ export default function ProfilePage() {
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-            <QrCode size={20} className="text-indigo-500" /> Payment & Bank Details
+            <QrCode size={20} className="text-indigo-500" /> {t('paymentBankTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">UPI ID</label>
+              <label className="text-xs font-bold text-slate-500 uppercase">{t('upiId')}</label>
               <div className="relative">
                 <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input type="text" placeholder="yourname@okhdfcbank"
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                   value={shop?.upi_id || ''} onChange={e => setShop({ ...shop, upi_id: e.target.value })} />
               </div>
-              <p className="text-[11px] text-slate-500">Shown as a scan-to-pay QR code on wholesale A4 tax invoices.</p>
+              <p className="text-[11px] text-slate-500">{t('upiDesc')}</p>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">Invoice Print Format</label>
+              <label className="text-xs font-bold text-slate-500 uppercase">{t('invoicePrintFormat')}</label>
               <div className="relative">
                 <Printer className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <select
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
                   value={shop?.invoice_format || 'thermal80'}
                   onChange={e => setShop({ ...shop, invoice_format: e.target.value })}>
-                  <option value="thermal58">Thermal Receipt (58mm)</option>
-                  <option value="thermal80">Thermal Receipt (80mm)</option>
-                  <option value="a4">A4 / Professional Tax Invoice</option>
+                  <option value="thermal58">{t('thermal58')}</option>
+                  <option value="thermal80">{t('thermal80')}</option>
+                  <option value="a4">{t('a4Format')}</option>
                 </select>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">Bill Language (customer bill)</label>
+              <label className="text-xs font-bold text-slate-500 uppercase">{t('billLanguageLabel')}</label>
               <div className="relative">
                 <Printer className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <select
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none transition-colors"
                   value={billLanguage}
                   onChange={e => setBillLanguage(e.target.value as BillLanguage)}>
-                  <option value="app">Same as app language</option>
+                  <option value="app">{t('billLangApp')}</option>
                   <option value="en">English</option>
                   <option value="mr">मराठी (Marathi)</option>
                   <option value="hi">हिन्दी (Hindi)</option>
                 </select>
               </div>
-              <p className="text-[11px] text-slate-500">Printed and PDF bills use this language, even if the app is shown in another one. Applies instantly on this device.</p>
+              <p className="text-[11px] text-slate-500">{t('billLanguageDesc')}</p>
             </div>
           </div>
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-            <p className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5"><Landmark size={14} /> Bank Details (shown on GST invoices)</p>
+            <p className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-1.5"><Landmark size={14} /> {t('bankDetailsTitle')}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Account Holder Name</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('accountHolderName')}</label>
                 <input type="text" placeholder={t('optional')}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                   value={shop?.bank_account_name || ''} onChange={e => setShop({ ...shop, bank_account_name: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Bank Name</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('bankName')}</label>
                 <input type="text" placeholder={t('optional')}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                   value={shop?.bank_name || ''} onChange={e => setShop({ ...shop, bank_name: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">Account Number</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('accountNumber')}</label>
                 <input type="text" placeholder={t('optional')}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                   value={shop?.bank_account_number || ''} onChange={e => setShop({ ...shop, bank_account_number: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase">IFSC Code</label>
+                <label className="text-xs font-bold text-slate-500 uppercase">{t('ifscCode')}</label>
                 <input type="text" placeholder={t('optional')}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
                   value={shop?.bank_ifsc || ''} onChange={e => setShop({ ...shop, bank_ifsc: e.target.value.toUpperCase() })} />
@@ -840,19 +842,19 @@ export default function ProfilePage() {
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-            <Palette size={20} className="text-purple-500" /> Bill Theme
+            <Palette size={20} className="text-purple-500" /> {t('billThemeTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Template</label>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">{t('template')}</label>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {([
-                { id: 'standard', label: 'Standard', desc: 'Clean, classic layout' },
-                { id: 'modern', label: 'Modern', desc: 'Colored header band' },
-                { id: 'stylish', label: 'Stylish', desc: 'Bold accent side-bar' },
-                { id: 'advanced_gst', label: 'Advanced GST', desc: 'HSN/SAC tax summary' },
-                { id: 'minimal', label: 'Minimal', desc: 'Thin lines, no fills' },
+                { id: 'standard', label: t('themeStandard'), desc: t('themeStandardDesc') },
+                { id: 'modern', label: t('themeModern'), desc: t('themeModernDesc') },
+                { id: 'stylish', label: t('themeStylish'), desc: t('themeStylishDesc') },
+                { id: 'advanced_gst', label: t('themeAdvancedGst'), desc: t('themeAdvancedGstDesc') },
+                { id: 'minimal', label: t('themeMinimal'), desc: t('themeMinimalDesc') },
               ] as const).map((theme) => {
                 const selected = (shop?.invoice_theme || 'standard') === theme.id;
                 return (
@@ -876,11 +878,11 @@ export default function ProfilePage() {
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">Applies to A4 / Professional Tax Invoices. Thermal receipts stay simple (too narrow for these layouts).</p>
+            <p className="text-[11px] text-slate-500 mt-2">{t('themeAppliesTo')}</p>
           </div>
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Accent Color</label>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">{t('accentColor')}</label>
             <div className="flex flex-wrap gap-3">
               {[
                 { value: '', label: 'No Color', swatch: '#0f172a' },
@@ -909,18 +911,18 @@ export default function ProfilePage() {
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">"No Color" keeps the original plain black-on-white look.</p>
+            <p className="text-[11px] text-slate-500 mt-2">{t('noColorDesc')}</p>
           </div>
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between mb-3">
-              <label className="text-xs font-bold text-slate-500 uppercase block">Preview</label>
+              <label className="text-xs font-bold text-slate-500 uppercase block">{t('preview')}</label>
               <button
                 type="button"
                 onClick={() => setShowFullPreview(true)}
                 className="flex items-center gap-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
               >
-                <Maximize2 size={13} /> Full A4 Preview
+                <Maximize2 size={13} /> {t('fullA4Preview')}
               </button>
             </div>
             <BillThemePreview
@@ -941,22 +943,22 @@ export default function ProfilePage() {
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
-            <FileText size={20} className="text-amber-500" /> Terms & Conditions
+            <FileText size={20} className="text-amber-500" /> {t('termsTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">Quick Add</label>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">{t('quickAdd')}</label>
             <div className="flex flex-wrap gap-2">
-              {[
-                'Goods once sold will not be taken back.',
-                'Warranty applicable as per manufacturer terms.',
-                'Payment due within 7 days of invoice date.',
-                'Interest @18% p.a. will be charged on overdue payments.',
-                'Goods once sold will only be exchanged, not refunded.',
-                'Subject to local jurisdiction only.',
-                'E. & O.E. (Errors and Omissions Excepted).',
-              ].map((preset) => (
+              {([
+                t('termPreset1'),
+                t('termPreset2'),
+                t('termPreset3'),
+                t('termPreset4'),
+                t('termPreset5'),
+                t('termPreset6'),
+                t('termPreset7'),
+              ] as const).map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -975,14 +977,14 @@ export default function ProfilePage() {
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-500 uppercase block">Your Terms & Conditions (prints on every bill)</label>
+              <label className="text-xs font-bold text-slate-500 uppercase block">{t('yourTermsLabel')}</label>
               {!!shop?.invoice_footer && (
                 <button
                   type="button"
                   onClick={() => setShop({ ...shop, invoice_footer: '' })}
                   className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition-colors"
                 >
-                  Clear
+                  {t('clear')}
                 </button>
               )}
             </div>
@@ -993,7 +995,7 @@ export default function ProfilePage() {
               value={shop?.invoice_footer || ''}
               onChange={e => setShop({ ...shop, invoice_footer: e.target.value })}
             />
-            <p className="text-[11px] text-slate-500">Type your own lines directly, or tap a Quick Add chip above to insert a common one. Leave empty to use the default two-line terms shown as the placeholder.</p>
+            <p className="text-[11px] text-slate-500">{t('termsDesc')}</p>
           </div>
         </CardContent>
       </Card>
@@ -1089,7 +1091,7 @@ export default function ProfilePage() {
                       {cpLoading ? <><Loader2 size={15} className="animate-spin" /> {t('saving')}</> : <><Lock size={15} /> {t('updatePwdBtn')}</>}
                     </button>
                     <button type="button" onClick={() => { setFpOpen(true); handleSendOtp(); }} className="text-sm font-bold text-emerald-500 hover:text-emerald-600 transition-colors">
-                      Forgot Password?
+                      {t('forgotPassword')}
                     </button>
                   </div>
                 </form>
@@ -1100,18 +1102,18 @@ export default function ProfilePage() {
               <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <ShieldCheck size={18} className="text-emerald-500" /> Reset Password via Email
+                    <ShieldCheck size={18} className="text-emerald-500" /> {t('resetPwdTitle')}
                   </h3>
                   <button onClick={() => { setFpOpen(false); setFpStep('idle'); setFpError(''); }} className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white font-bold">
-                    Cancel
+                    {t('cancel')}
                   </button>
                 </div>
                 
                 {fpStep === 'otp' && (
                   <form onSubmit={handleVerifyOtp} className="space-y-4">
-                    <p className="text-sm text-slate-500">We've sent a 6-digit OTP to <b>{user?.email}</b>. Please enter it below.</p>
+                    <p className="text-sm text-slate-500">{t('otpSentMsg', { email: user?.email || '' })}</p>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500 uppercase">Enter OTP</label>
+                      <label className="text-xs font-bold text-slate-500 uppercase">{t('enterOtp')}</label>
                       <input type="text" maxLength={6} value={fpOtp}
                         onChange={e => { setFpOtp(e.target.value.replace(/\D/g, '')); setFpError(''); }}
                         placeholder="123456"
@@ -1124,7 +1126,7 @@ export default function ProfilePage() {
                     )}
                     <button type="submit" disabled={fpLoading || fpOtp.length !== 6}
                       className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 transition-all disabled:opacity-50">
-                      {fpLoading ? 'Verifying...' : 'Verify OTP'}
+                      {fpLoading ? t('verifying') : t('verifyOtp')}
                     </button>
                   </form>
                 )}
@@ -1133,17 +1135,17 @@ export default function ProfilePage() {
                   <form onSubmit={handleResetPassword} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-500 uppercase">New Password</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase">{t('newPassword')}</label>
                         <input type={cpShow ? 'text' : 'password'} value={cpNew}
                           onChange={e => { setCpNew(e.target.value); setFpError(''); }}
-                          placeholder="New password"
+                          placeholder={t('newPwdPlaceholder')}
                           className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-500 uppercase">Confirm Password</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase">{t('confirmPassword')}</label>
                         <input type={cpShow ? 'text' : 'password'} value={cpConfirm}
                           onChange={e => { setCpConfirm(e.target.value); setFpError(''); }}
-                          placeholder="Confirm new password"
+                          placeholder={t('confirmNewPwdPlaceholder')}
                           className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl py-2.5 px-4 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none text-sm transition-colors" />
                       </div>
                     </div>
@@ -1154,14 +1156,14 @@ export default function ProfilePage() {
                     )}
                     <button type="submit" disabled={fpLoading}
                       className="px-6 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-400 text-white dark:text-slate-900 transition-all disabled:opacity-50">
-                      {fpLoading ? 'Saving...' : 'Set New Password'}
+                      {fpLoading ? t('saving') : t('setNewPassword')}
                     </button>
                   </form>
                 )}
 
                 {fpStep === 'idle' && fpLoading && (
                   <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 size={15} className="animate-spin" /> Sending OTP to {user?.email}...
+                    <Loader2 size={15} className="animate-spin" /> {t('sendingOtp', { email: user?.email || '' })}
                   </div>
                 )}
               </div>

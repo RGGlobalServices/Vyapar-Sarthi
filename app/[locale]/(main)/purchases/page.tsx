@@ -955,7 +955,7 @@ export default function PurchasesPage() {
                       </div>
                     ) : (
                     <div className="w-28">
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Unit</label>
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('unit') || 'Unit'}</label>
                       <select value={item.unitId || ''} onChange={e => {
                         const newItems = [...items];
                         const selectedUnit = masterData?.units?.find((u:any) => u.id === e.target.value);
@@ -1017,7 +1017,7 @@ export default function PurchasesPage() {
                       }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" placeholder="LOT-001" />
                     </div>
                     <div className="w-36">
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Expiry (Opt)</label>
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('expiryOptional') || 'Expiry (Opt)'}</label>
                       <input type="date" value={item.expiryDate || ''} onChange={e => {
                         const newItems = [...items];
                         (newItems[index] as any).expiryDate = e.target.value;
@@ -1040,7 +1040,7 @@ export default function PurchasesPage() {
                     {item.costMode === 'mrp_based' && (
                       <div className="flex gap-3 max-w-xs">
                         <div className="flex-1">
-                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">MRP</label>
+                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('mrpLabel') || 'MRP'}</label>
                           <input type="number" step="0.01" min="0" placeholder={selectedProduct?.mrp ? String(selectedProduct.mrp) : '0'}
                             value={item.mrp} onChange={e => {
                               const newItems = [...items];
@@ -1049,7 +1049,7 @@ export default function PurchasesPage() {
                             }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                         </div>
                         <div className="flex-1">
-                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Discount %</label>
+                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('discountPct') || 'Discount %'}</label>
                           <input type="number" step="0.01" min="0" max="100" placeholder="0"
                             value={item.discountPercent} onChange={e => {
                               const newItems = [...items];
@@ -1249,24 +1249,24 @@ export default function PurchasesPage() {
         <div className="flex items-center gap-2">
           <ExportButton
             filename="purchases"
-            title="Purchases"
+            title={t('purchasesTitle') || 'Purchases'}
             dateRange={dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : undefined}
             summary={[
-              { label: 'Invoices', value: String(invoices.length) },
-              { label: 'Total Spend', value: `₹${totalSpend.toLocaleString('en-IN')}` },
+              { label: t('exportInvoicesLabel') || 'Invoices', value: String(invoices.length) },
+              { label: t('exportTotalSpend') || 'Total Spend', value: `₹${totalSpend.toLocaleString('en-IN')}` },
             ]}
             columns={[
-              { key: 'date', label: 'Date', type: 'date' },
-              { key: 'invoiceNumber', label: 'Invoice #' },
-              { key: 'supplierName', label: 'Supplier' },
-              { key: 'itemCount', label: 'Items', type: 'number' },
-              { key: 'totalCost', label: 'Total Amount', type: 'currency' },
+              { key: 'date', label: t('dateLabel') || 'Date', type: 'date' },
+              { key: 'invoiceNumber', label: t('invoiceHash') || 'Invoice #' },
+              { key: 'supplierName', label: t('colSupplier') || 'Supplier' },
+              { key: 'itemCount', label: t('itemsLabel') || 'Items', type: 'number' },
+              { key: 'totalCost', label: t('totalAmount') || 'Total Amount', type: 'currency' },
             ]}
             data={exportRows}
           />
           <button onClick={() => setShowReturnsHistory(true)} data-testid="purchase-returns-history-btn"
             className="bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-500/30 text-orange-600 dark:text-orange-400 px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors hover:bg-orange-50 dark:hover:bg-orange-500/10">
-            <RotateCcw size={18} /> Returns</button>
+            <RotateCcw size={18} /> {t('returnsBtn') || 'Returns'}</button>
           <button onClick={openAdd}
             className="bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-2 transition-colors">
             <Plus size={18} /> {t('newPurchase') || 'New Purchase'}</button>
@@ -1358,7 +1358,7 @@ export default function PurchasesPage() {
                 <tr>
                   <th className="px-5 py-4 font-medium">{t('dateLabel') || 'Date'}</th>
                   <th className="px-5 py-4 font-medium">{t('invoiceHash') || 'Invoice #'}</th>
-                  <th className="px-5 py-4 font-medium">Supplier</th>
+                  <th className="px-5 py-4 font-medium">{t('colSupplier') || 'Supplier'}</th>
                   <th className="px-5 py-4 font-medium">{t('itemsLabel') || 'Items'}</th>
                   <th className="px-5 py-4 font-semibold text-right text-slate-600 dark:text-slate-300">{t('totalAmount') || 'Total Amount'}</th>
                   <th className="px-5 py-4 font-medium text-right">{t('colActions') || 'Actions'}</th>
@@ -1482,7 +1482,7 @@ export default function PurchasesPage() {
                 )}
                 {Array.isArray(selectedInvoice.charges) && selectedInvoice.charges.length > 0 && (
                   <div className="col-span-2 md:col-span-4" data-testid="purchase-charges">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Bill charges (included in the total)</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('billChargesLabel') || 'Bill charges (included in total)'}</p>
                     <div className="flex flex-wrap gap-2">
                       {selectedInvoice.charges.map((c: any, i: number) => (
                         <span key={i} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
@@ -1495,11 +1495,11 @@ export default function PurchasesPage() {
                 {purchaseTotalReturnedAmount(selectedInvoice) > 0 && (
                   <>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Returned</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('returnedLabel') || 'Returned'}</p>
                       <p className="text-sm font-bold text-red-600 dark:text-red-400 font-mono">−₹{purchaseTotalReturnedAmount(selectedInvoice).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net Payable</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('netPayableLabel') || 'Net Payable'}</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white font-mono">₹{Math.max(0, (selectedInvoice.totalCost || 0) - purchaseTotalReturnedAmount(selectedInvoice)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
                     </div>
                   </>
@@ -1515,8 +1515,8 @@ export default function PurchasesPage() {
                     <tr>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('productLabel') || 'Product'}</th>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('qty') || 'Qty'}</th>
-                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">MRP</th>
-                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">Purchase %</th>
+                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">{t('mrpLabel') || 'MRP'}</th>
+                      <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">{t('purchasePctCol') || 'Purchase %'}</th>
                       <th className="px-4 py-3 font-bold text-xs uppercase tracking-wider text-right text-slate-500 dark:text-slate-400">{t('unitCost') || 'Unit Cost'}</th>
                     </tr>
                   </thead>
@@ -1527,7 +1527,7 @@ export default function PurchasesPage() {
                         <tr key={item.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <td className="px-4 py-3 text-slate-900 dark:text-slate-200 font-bold">
                             {item.product?.name}
-                            {returnedForRow > 0 && <span className="block text-[10px] font-semibold text-red-500 dark:text-red-400">−{returnedForRow} returned</span>}
+                            {returnedForRow > 0 && <span className="block text-[10px] font-semibold text-red-500 dark:text-red-400">−{returnedForRow} {t('returnedQtyNote') || 'returned'}</span>}
                           </td>
                           <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.quantity}</td>
                           <td className="px-4 py-3 text-slate-600 dark:text-slate-400 text-right font-mono">{item.mrp != null ? `₹${item.mrp.toLocaleString('en-IN')}` : '—'}</td>
@@ -1765,6 +1765,7 @@ export default function PurchasesPage() {
 // Bada Udyog: the physical bill / weighbridge-slip photo for one purchase. Reuses the exact storage Suppliers already use for bill
 // photos (Supplier.documents, tagged by an id — transactionId there, purchaseInvoiceId here) so no schema change is needed.
 function PurchaseBillPhotos({ invoice, onSaved }: { invoice: any; onSaved: (docs: any[]) => void }) {
+  const t = useTranslations('Purchases');
   const [uploading, setUploading] = useState(false);
   const docs: any[] = Array.isArray(invoice.supplier?.documents) ? invoice.supplier.documents : [];
   const mine = docs.filter((d: any) => d.purchaseInvoiceId === invoice.id);
@@ -1796,7 +1797,7 @@ function PurchaseBillPhotos({ invoice, onSaved }: { invoice: any; onSaved: (docs
 
   return (
     <div data-testid="purchase-bill-photos">
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Bill / Weight Slip Photo</p>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('billWeightPhoto') || 'Bill / Weight Slip Photo'}</p>
       <div className="flex flex-wrap items-center gap-2">
         {mine.map((d: any) => (
           <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer"
@@ -1805,7 +1806,7 @@ function PurchaseBillPhotos({ invoice, onSaved }: { invoice: any; onSaved: (docs
           </a>
         ))}
         <label className="text-xs font-bold px-3 py-1.5 rounded-lg border border-dashed border-emerald-400 text-emerald-700 dark:text-emerald-400 cursor-pointer flex items-center gap-1.5">
-          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {mine.length ? 'Add another' : 'Upload photo'}
+          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} {mine.length ? (t('addAnotherPhoto') || 'Add another') : (t('uploadPhoto') || 'Upload photo')}
           <input type="file" accept="image/*,application/pdf" multiple onChange={upload} className="hidden" disabled={uploading} />
         </label>
       </div>
@@ -1817,6 +1818,7 @@ function PurchaseBillPhotos({ invoice, onSaved }: { invoice: any; onSaved: (docs
 // invoice's detail; this is every purchase return this shop has ever raised, newest first, so "did I already return this bill?"
 // doesn't mean hunting through every invoice one at a time.
 function PurchaseReturnsHistoryModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations('Purchases');
   const profile = useBusinessStore(s => s.profile);
   const [data, setData] = useState<{ rows: any[]; summary: any } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1860,14 +1862,14 @@ function PurchaseReturnsHistoryModal({ onClose }: { onClose: () => void }) {
       <div className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <RotateCcw size={18} className="text-orange-500" /> Purchase Returns History
+            <RotateCcw size={18} className="text-orange-500" /> {t('returnsHistoryTitle') || 'Purchase Returns History'}
           </h2>
           <button onClick={onClose} className="p-2 -mr-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-full transition-colors"><X size={18} /></button>
         </div>
         {!loading && data && (
           <div className="px-6 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-6 text-sm">
-            <span className="text-slate-500">{data.summary.count} return{data.summary.count === 1 ? '' : 's'}</span>
-            <span className="font-bold text-orange-600 dark:text-orange-400">₹{(data.summary.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} total</span>
+            <span className="text-slate-500">{data.summary.count} {data.summary.count === 1 ? (t('returnSingular') || 'return') : (t('returnPlural') || 'returns')}</span>
+            <span className="font-bold text-orange-600 dark:text-orange-400">₹{(data.summary.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} {t('returnsTotalSuffix') || 'total'}</span>
           </div>
         )}
         <div className="overflow-y-auto flex-1">
@@ -1876,17 +1878,17 @@ function PurchaseReturnsHistoryModal({ onClose }: { onClose: () => void }) {
           ) : rows.length === 0 ? (
             <div className="p-12 text-center">
               <RotateCcw size={40} className="mx-auto text-slate-300 dark:text-slate-700" />
-              <p className="mt-3 text-sm text-slate-500">No purchase returns yet. Open a purchase's details and use "Return" to raise one.</p>
+              <p className="mt-3 text-sm text-slate-500">{t('noReturnsYet') || 'No purchase returns yet. Open a purchase\'s details and use "Return" to raise one.'}</p>
             </div>
           ) : (
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 uppercase text-xs sticky top-0">
                 <tr>
-                  <th className="px-4 py-3 font-bold">Date</th>
-                  <th className="px-3 py-3 font-bold">Supplier</th>
-                  <th className="px-3 py-3 font-bold">Invoice #</th>
-                  <th className="px-3 py-3 font-bold">Return #</th>
-                  <th className="px-3 py-3 font-bold text-right">Amount</th>
+                  <th className="px-4 py-3 font-bold">{t('dateLabel') || 'Date'}</th>
+                  <th className="px-3 py-3 font-bold">{t('colSupplier') || 'Supplier'}</th>
+                  <th className="px-3 py-3 font-bold">{t('invoiceHash') || 'Invoice #'}</th>
+                  <th className="px-3 py-3 font-bold">{t('returnsReturnNoCol') || 'Return #'}</th>
+                  <th className="px-3 py-3 font-bold text-right">{t('returnsAmountCol') || 'Amount'}</th>
                   <th className="px-3 py-3 font-bold w-10" />
                   <th className="px-3 py-3 font-bold w-8" />
                 </tr>

@@ -308,7 +308,7 @@ export function useExport() {
   }) => {
     const [{ default: jsPDF }, { default: autoTable }, tpl] = await Promise.all([
       import('jspdf'),
-      import('jspdf-autotable'),
+      import('jspdf-autotable') as any,
       import('@/lib/pdf/professionalTemplate'),
     ]);
 
@@ -377,6 +377,14 @@ export function useExport() {
         ...tpl.getProfessionalTableStyles(true),
         styles: { ...tpl.getProfessionalTableStyles(true).styles, fontSize, cellPadding },
         headStyles: { ...tpl.getProfessionalTableStyles(true).headStyles, fontSize },
+        // jsPDF-autotable does not reliably apply styles.font for registered
+        // custom (non-built-in) fonts. willDrawCell is the only reliable hook
+        // to set the font just before each cell's text is rendered.
+        willDrawCell: (data: any) => {
+          if (tpl.isDevanagariAvailable()) {
+            doc.setFont('NotoDevanagari', data.row.section === 'head' ? 'bold' : 'normal');
+          }
+        },
       });
       y = (doc.lastAutoTable?.finalY ?? y) + 12;
     }
