@@ -126,19 +126,9 @@ export async function POST(req: NextRequest) {
       await tx.sale.deleteMany({ where: { shopId } });
 
       // ── Purchases ──────────────────────────────────────────────────────────
-      // purchase_return_items cascade from purchase_returns
-      // purchase_returns cascade from purchase_invoices (if Cascade set) — use raw to be safe
-      await tx.$executeRaw`
-        DELETE FROM purchase_return_items
-        WHERE return_id IN (
-          SELECT pr.id FROM purchase_returns pr
-          JOIN purchase_invoices pi ON pi.id = pr.purchase_id
-          WHERE pi.shop_id = ${shopId}::uuid
-        )`;
-      await tx.$executeRaw`
-        DELETE FROM purchase_returns
-        WHERE purchase_id IN (SELECT id FROM purchase_invoices WHERE shop_id = ${shopId}::uuid)`;
-      // purchase_items cascade from purchase_invoices (Cascade FK)
+      // purchase_returns cascade from purchase_invoices (purchase_invoice_id FK, onDelete: Cascade)
+      // purchase_return_items cascade from purchase_returns (onDelete: Cascade)
+      // purchase_items cascade from purchase_invoices (onDelete: Cascade)
       await tx.purchaseInvoice.deleteMany({ where: { shopId } });
       await tx.$executeRaw`DELETE FROM supplier_transactions WHERE supplier_id IN (SELECT id FROM suppliers WHERE shop_id = ${shopId}::uuid)`;
       await tx.supplier.deleteMany({ where: { shopId } });
