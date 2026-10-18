@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
+import { isMillBillingPackage } from '@/lib/config/packageConfig';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -24,85 +25,88 @@ export async function POST(req: NextRequest) {
   }
 
   const shopId = shop.id;
+  const isMill = isMillBillingPackage(shop.packageType);
 
   try {
     // Use raw SQL inside a transaction to delete in dependency order.
     // NoAction FK tables (sale_items, purchase_items, etc.) are deleted first;
     // Cascade FK tables (delivery_challan_items, etc.) are handled automatically.
     await prisma.$transaction(async (tx) => {
-      // ── Milling: batch stage execution fields (deepest child) ──────────────
-      await tx.$executeRaw`
-        DELETE FROM batch_stage_execution_fields
-        WHERE stage_id IN (
-          SELECT bs.id FROM batch_stages bs
-          JOIN production_batches pb ON pb.id = bs.batch_id
-          WHERE pb.shop_id = ${shopId}::uuid
-        )`;
+      // ── Milling-only tables (skip for non-mill packages) ───────────────────
+      if (isMill) {
+        await tx.$executeRaw`
+          DELETE FROM batch_stage_execution_fields
+          WHERE stage_id IN (
+            SELECT bs.id FROM batch_stages bs
+            JOIN production_batches pb ON pb.id = bs.batch_id
+            WHERE pb.shop_id = ${shopId}::uuid
+          )`;
 
-      await tx.$executeRaw`
-        DELETE FROM batch_stage_inputs
-        WHERE snapshot_id IN (
-          SELECT bss.id FROM batch_stage_snapshots bss
-          JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-          JOIN production_batches pb ON pb.id = bws.batch_id
-          WHERE pb.shop_id = ${shopId}::uuid
-        )`;
-      await tx.$executeRaw`
-        DELETE FROM batch_stage_outputs
-        WHERE snapshot_id IN (
-          SELECT bss.id FROM batch_stage_snapshots bss
-          JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-          JOIN production_batches pb ON pb.id = bws.batch_id
-          WHERE pb.shop_id = ${shopId}::uuid
-        )`;
-      await tx.$executeRaw`
-        DELETE FROM batch_stage_quality_parameters
-        WHERE snapshot_id IN (
-          SELECT bss.id FROM batch_stage_snapshots bss
-          JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-          JOIN production_batches pb ON pb.id = bws.batch_id
-          WHERE pb.shop_id = ${shopId}::uuid
-        )`;
-      await tx.$executeRaw`
-        DELETE FROM batch_stage_snapshots
-        WHERE workflow_snapshot_id IN (
-          SELECT bws.id FROM batch_workflow_snapshots bws
-          JOIN production_batches pb ON pb.id = bws.batch_id
-          WHERE pb.shop_id = ${shopId}::uuid
-        )`;
-      await tx.$executeRaw`
-        DELETE FROM batch_workflow_snapshots
-        WHERE batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
+        await tx.$executeRaw`
+          DELETE FROM batch_stage_inputs
+          WHERE snapshot_id IN (
+            SELECT bss.id FROM batch_stage_snapshots bss
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.batch_id
+            WHERE pb.shop_id = ${shopId}::uuid
+          )`;
+        await tx.$executeRaw`
+          DELETE FROM batch_stage_outputs
+          WHERE snapshot_id IN (
+            SELECT bss.id FROM batch_stage_snapshots bss
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.batch_id
+            WHERE pb.shop_id = ${shopId}::uuid
+          )`;
+        await tx.$executeRaw`
+          DELETE FROM batch_stage_quality_parameters
+          WHERE snapshot_id IN (
+            SELECT bss.id FROM batch_stage_snapshots bss
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.batch_id
+            WHERE pb.shop_id = ${shopId}::uuid
+          )`;
+        await tx.$executeRaw`
+          DELETE FROM batch_stage_snapshots
+          WHERE workflow_snapshot_id IN (
+            SELECT bws.id FROM batch_workflow_snapshots bws
+            JOIN production_batches pb ON pb.id = bws.batch_id
+            WHERE pb.shop_id = ${shopId}::uuid
+          )`;
+        await tx.$executeRaw`
+          DELETE FROM batch_workflow_snapshots
+          WHERE batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
 
-      await tx.$executeRaw`
-        DELETE FROM batch_stages
-        WHERE batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
+        await tx.$executeRaw`
+          DELETE FROM batch_stages
+          WHERE batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
 
-      // Milling lots that reference production_batches
-      await tx.batchInputLot.deleteMany({ where: { shopId } });
-      await tx.wipLot.deleteMany({ where: { shopId } });
-      await tx.finishedGoodsLot.deleteMany({ where: { shopId } });
-      await tx.byProductLot.deleteMany({ where: { shopId } });
-      await tx.rejectionLot.deleteMany({ where: { shopId } });
-      await tx.productionOutput.deleteMany({ where: { shopId } });
-      await tx.qualityTest.deleteMany({ where: { shopId } });
-      await tx.productionBatch.deleteMany({ where: { shopId } });
-      await tx.rawMaterialLot.deleteMany({ where: { shopId } });
+        // Milling lots that reference production_batches
+        await tx.batchInputLot.deleteMany({ where: { shopId } });
+        await tx.wipLot.deleteMany({ where: { shopId } });
+        await tx.finishedGoodsLot.deleteMany({ where: { shopId } });
+        await tx.byProductLot.deleteMany({ where: { shopId } });
+        await tx.rejectionLot.deleteMany({ where: { shopId } });
+        await tx.productionOutput.deleteMany({ where: { shopId } });
+        await tx.qualityTest.deleteMany({ where: { shopId } });
+        await tx.productionBatch.deleteMany({ where: { shopId } });
+        await tx.rawMaterialLot.deleteMany({ where: { shopId } });
 
-      // ── Mill operational logs ───────────────────────────────────────────────
-      await tx.gateEntry.deleteMany({ where: { shopId } });
-      await tx.weighbridgeEntry.deleteMany({ where: { shopId } });
-      await tx.freightEntry.deleteMany({ where: { shopId } });
-      await tx.dispatchEntry.deleteMany({ where: { shopId } });
-      await tx.jobWorkOrder.deleteMany({ where: { shopId } });
-      await tx.commissionEntry.deleteMany({ where: { shopId } });
+        // Mill operational logs
+        await tx.gateEntry.deleteMany({ where: { shopId } });
+        await tx.weighbridgeEntry.deleteMany({ where: { shopId } });
+        await tx.freightEntry.deleteMany({ where: { shopId } });
+        await tx.dispatchEntry.deleteMany({ where: { shopId } });
+        await tx.jobWorkOrder.deleteMany({ where: { shopId } });
+        await tx.commissionEntry.deleteMany({ where: { shopId } });
 
-      // Machines & maintenance
-      await tx.sparePartMovement.deleteMany({ where: { shopId } });
-      await tx.sparePart.deleteMany({ where: { shopId } });
-      await tx.machineDowntime.deleteMany({ where: { shopId } });
-      await tx.maintenanceEntry.deleteMany({ where: { shopId } });
-      await tx.machine.deleteMany({ where: { shopId } });
+        // Machines & maintenance
+        await tx.sparePartMovement.deleteMany({ where: { shopId } });
+        await tx.sparePart.deleteMany({ where: { shopId } });
+        await tx.machineDowntime.deleteMany({ where: { shopId } });
+        await tx.maintenanceEntry.deleteMany({ where: { shopId } });
+        await tx.machine.deleteMany({ where: { shopId } });
+      }
 
       // ── Sales hierarchy ────────────────────────────────────────────────────
       await tx.$executeRaw`
