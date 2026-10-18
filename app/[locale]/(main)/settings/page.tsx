@@ -209,7 +209,7 @@ function SettingsPageInner() {
       setShowResetModal(false);
       setResetConfirm('');
       // Reload the page so all cached data is cleared
-      window.location.href = `/${locale}/dashboard`;
+      window.location.href = `/${locale}/`;
     } catch (err: any) {
       setStatus({ type: 'error', message: err?.response?.data?.error || t('resetFailed') });
       setShowResetModal(false);
