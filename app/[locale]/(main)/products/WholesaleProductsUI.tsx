@@ -963,17 +963,17 @@ export default function WholesaleProductsUI() {
             )}
             {bizConfig.hasSizes && (
               <span className="text-[10px] bg-violet-500/15 text-violet-500 border border-violet-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-1">
-                <Ruler size={9} /> Size Inventory
+                <Ruler size={9} /> {t('sizeInventoryBadge')}
               </span>
             )}
             {bizConfig.hasWarranty && (
               <span className="text-[10px] bg-sky-500/15 text-sky-500 border border-sky-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide flex items-center gap-1">
-                <ShieldCheck size={9} /> Warranty
+                <ShieldCheck size={9} /> {t('colWarranty')}
               </span>
             )}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           {/* ExpandViewButton removed — not needed in day-to-day workflow */}
           <ExportButton
             filename="products"
@@ -1345,41 +1345,41 @@ export default function WholesaleProductsUI() {
                       </th>
                     )}
                     {groupBizConfig.hasBatch && (
-                      <th className="p-4 font-semibold">Batch</th>
+                      <th className="p-4 font-semibold">{t('colBatch')}</th>
                     )}
                     {groupBizConfig.hasModel && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><MonitorSmartphone size={13}/> Model</div>
+                        <div className="flex items-center gap-1"><MonitorSmartphone size={13}/> {t('colModel')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasWarranty && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><ShieldCheck size={13}/> Warranty</div>
+                        <div className="flex items-center gap-1"><ShieldCheck size={13}/> {t('colWarranty')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasGender && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><User size={13}/> Gender</div>
+                        <div className="flex items-center gap-1"><User size={13}/> {t('colGender')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasShades && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><Palette size={13}/> Shade</div>
+                        <div className="flex items-center gap-1"><Palette size={13}/> {t('colShade')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasColors && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><Palette size={13}/> Colour</div>
+                        <div className="flex items-center gap-1"><Palette size={13}/> {t('colColour')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasFabric && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><Shirt size={13}/> Fabric</div>
+                        <div className="flex items-center gap-1"><Shirt size={13}/> {t('colFabric')}</div>
                       </th>
                     )}
                     {groupBizConfig.hasSoleMaterial && (
                       <th className="p-4 font-semibold">
-                        <div className="flex items-center gap-1"><Footprints size={13}/> Sole</div>
+                        <div className="flex items-center gap-1"><Footprints size={13}/> {t('colSole')}</div>
                       </th>
                     )}
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('costPrice')}>
@@ -1400,7 +1400,7 @@ export default function WholesaleProductsUI() {
                         the Food-Mill Product Master spec; every other
                         business type keeps it exactly as before. */}
                     {profile.businessType !== 'millprocessing' && (
-                      <th className="p-4 font-semibold text-right" title="Party discount: (MRP − Wholesale Selling) ÷ MRP">Party Disc %</th>
+                      <th className="p-4 font-semibold text-right" title={t('partyDiscTitle')}>{t('partyDiscPercent')}</th>
                     )}
                     <th className="p-4 font-semibold text-right cursor-pointer hover:text-slate-800 dark:hover:text-slate-200" onClick={() => handleSort('currentStock')}>
                       <div className="flex items-center justify-end gap-1">{t('colStock') || 'Stock'} {sortConfig?.key === 'currentStock' && (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>)}</div>

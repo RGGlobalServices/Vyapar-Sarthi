@@ -135,6 +135,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
 }) {
   const activeShopId = useBusinessStore(s => s.activeShopId);
   const locale = useLocale();
+  const t = useTranslations('Party');
   const { data: rows = [], isLoading, mutate } = useSWR<any[]>(
     activeShopId ? `/crm/customers?type=${customerType}&_shop=${activeShopId}` : null,
     fetcher,
@@ -405,7 +406,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
                         </a>
                       )}
                       {doc.alternateMobile && (
-                        <span className="text-slate-400">Alt: {doc.alternateMobile}</span>
+                        <span className="text-slate-400">{t('altPrefix')} {doc.alternateMobile}</span>
                       )}
                     </div>
 
@@ -432,7 +433,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
 
                     {customerType === 'transporter' && doc.driverName && (
                       <p className="mt-1 text-xs text-slate-500">
-                        Driver: <span className="font-semibold text-slate-700 dark:text-slate-300">{doc.driverName}</span> {doc.driverMobile ? `(${doc.driverMobile})` : ''}
+                        {t('driverPrefix')} <span className="font-semibold text-slate-700 dark:text-slate-300">{doc.driverName}</span> {doc.driverMobile ? `(${doc.driverMobile})` : ''}
                       </p>
                     )}
 
@@ -453,7 +454,7 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
                     <div className="mt-2 flex items-center gap-3 text-[11px] font-medium text-slate-500 flex-wrap">
                       {row.gst && <span>GST: <b className="font-mono text-slate-700 dark:text-slate-300">{row.gst}</b></span>}
                       {row.pan && <span>PAN: <b className="font-mono text-slate-700 dark:text-slate-300">{row.pan}</b></span>}
-                      {doc.paymentTerms && <span>Terms: <b>{doc.paymentTerms}</b></span>}
+                      {doc.paymentTerms && <span>{t('termsPrefix')} <b>{doc.paymentTerms}</b></span>}
                     </div>
 
                     {row.notes && <p className="mt-2 text-xs text-slate-500 italic line-clamp-2">{row.notes}</p>}
@@ -679,12 +680,12 @@ function MillPartyPanel({ customerType, label, icon, accent }: {
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  FSSAI No. (Optional)
+                  {t('fssaiLabelOptional')}
                 </label>
                 <input
                   value={form.fssai} onChange={(e) => setForm({ ...form, fssai: e.target.value })}
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm font-mono"
-                  placeholder="14-digit FSSAI number"
+                  placeholder={t('fssaiPlaceholder')}
                   maxLength={14}
                 />
               </div>
@@ -912,6 +913,7 @@ const initialPartyForm = {
 // Add/Edit (PartiesPanel) and customer Add/Edit (CustomersPanel).
 function FarmerFormFields({ form, setForm, godowns, locale, isMill, variant = 'farmer' }: { form: any; setForm: (v: any) => void; godowns: any[]; locale: string; isMill: boolean; variant?: 'farmer' | 'party' }) {
   // 'party' variant: customers/parties (Party name, party type). 'farmer' keeps the farmer wording.
+  const t = useTranslations('Party');
   const isParty = variant === 'party';
   return (
     <div className="space-y-6">
@@ -1052,13 +1054,13 @@ function FarmerFormFields({ form, setForm, godowns, locale, isMill, variant = 'f
           />
           <p className="text-[11px] text-slate-500">{locale === 'mr' ? 'पहिल्या २ अंकांवरून राज्य आपोआप भरले जाते (उदा. 27 = Maharashtra).' : locale === 'hi' ? 'पहले 2 अंकों से राज्य अपने आप भर जाता है (जैसे 27 = Maharashtra).' : 'The state is filled from the first two digits (27 = Maharashtra).'}</p>
           <label className="block text-xs font-bold mt-3 mb-1 text-slate-700 dark:text-slate-300">
-            FSSAI No. ({locale === 'mr' ? 'ऐच्छिक' : locale === 'hi' ? 'वैकल्पिक' : 'Optional'})
+            {t('fssaiLabelOptional')}
           </label>
           <input
             value={form.fssai}
             onChange={e => setForm({ ...form, fssai: e.target.value })}
             className="w-full h-10 px-3 border border-slate-300 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-950 font-mono focus:ring-2 focus:ring-amber-500 outline-none"
-            placeholder="14-digit FSSAI number"
+            placeholder={t('fssaiPlaceholder')}
             maxLength={14}
           />
         </div>
@@ -1681,7 +1683,7 @@ function PartiesPanel() {
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
         >
           {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
-          Collection Register
+          {t('collectionRegister')}
         </button>
         <button
           onClick={() => setShowScanModal(true)}
@@ -1689,7 +1691,7 @@ function PartiesPanel() {
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
         >
           <ScanLine size={18} />
-          Scan Collection Sheet
+          {t('scanCollectionSheet')}
         </button>
         <button
           onClick={() => { setForm(initialPartyForm); setShowNewParty(true); }}
@@ -1733,7 +1735,7 @@ function PartiesPanel() {
                   onChange={toggleAll}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
                 />
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select All</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('selectAll')}</span>
               </label>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1986,8 +1988,8 @@ function PartiesPanel() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold mb-1">FSSAI No.</label>
-                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm" maxLength={14} placeholder="14-digit FSSAI number" />
+                      <label className="block text-sm font-bold mb-1">{t('fssaiLabel')}</label>
+                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm" maxLength={14} placeholder={t('fssaiPlaceholder')} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
@@ -2064,8 +2066,8 @@ function PartiesPanel() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold mb-1">FSSAI No.</label>
-                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={14} placeholder="14-digit FSSAI number" />
+                      <label className="block text-sm font-bold mb-1">{t('fssaiLabel')}</label>
+                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={14} placeholder={t('fssaiPlaceholder')} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
@@ -2475,7 +2477,7 @@ function CustomersPanel() {
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-60"
         >
           {generatingRegister ? <Loader2 size={18} className="animate-spin" /> : <NotebookText size={18} />}
-          Collection Register
+          {t('collectionRegister')}
         </button>
         <button
           onClick={() => setShowScanModal(true)}
@@ -2483,7 +2485,7 @@ function CustomersPanel() {
           className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-400 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors"
         >
           <ScanLine size={18} />
-          Scan Collection Sheet
+          {t('scanCollectionSheet')}
         </button>
         <button
           onClick={() => setShowNewCustomer(true)}
@@ -2527,7 +2529,7 @@ function CustomersPanel() {
                   onChange={toggleAll}
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
                 />
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select All</span>
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('selectAll')}</span>
               </label>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

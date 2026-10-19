@@ -5,6 +5,7 @@ import { X, Camera, Upload, Loader2, ScanLine, Check, AlertTriangle, IndianRupee
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import { useTranslations } from 'next-intl';
 
 interface PartyOption {
   id: string;
@@ -58,6 +59,7 @@ export default function ScanCollectionModal({
   onApplied: () => void;
   entityType?: 'party' | 'customer';
 }) {
+  const t = useTranslations('Party');
   const [stage, setStage] = useState<Stage>('pick');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -94,13 +96,13 @@ export default function ScanCollectionModal({
         chqInput: r.chq ? String(r.chq) : '',
       })));
       if (scannedRows.length === 0) {
-        setError('No rows were readable in this photo. Try a clearer, well-lit shot with the page flat.');
+        setError(t('noRowsReadable'));
         setStage('preview');
         return;
       }
       setStage('review');
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e?.message || 'Failed to scan the photo. Please try again.');
+      setError(e?.response?.data?.detail || e?.message || t('scanFailed'));
       setStage('preview');
     }
   }
@@ -140,11 +142,11 @@ export default function ScanCollectionModal({
     }
     if (ok > 0) onApplied();
     if (failed === 0) {
-      toast.success(`Applied payments for ${ok} ${ok === 1 ? 'party' : 'parties'}`);
+      toast.success(t('appliedPayments', { count: ok }));
       onClose();
     } else {
       setStage('review');
-      toast.error(`${failed} payment${failed === 1 ? '' : 's'} failed — check the rows and retry.`);
+      toast.error(t('paymentsFailed', { count: failed }));
     }
   }
 
@@ -154,7 +156,7 @@ export default function ScanCollectionModal({
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <ScanLine size={18} className="text-indigo-500" />
-            Scan Collection Sheet
+            {t('scanModalTitle')}
           </h2>
           <button onClick={onClose} disabled={stage === 'scanning' || stage === 'applying'}>
             <X size={20} className="text-slate-400 hover:text-slate-700 transition-colors" />
@@ -165,7 +167,7 @@ export default function ScanCollectionModal({
           {stage === 'pick' && (
             <div className="space-y-4">
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Photograph or upload your collection round notebook page — AI will read each party&apos;s Cash/Chq amounts so you don&apos;t have to type them in one by one.
+                {t('scanModalDesc')}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -174,7 +176,7 @@ export default function ScanCollectionModal({
                   className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
                 >
                   <Camera size={28} />
-                  <span className="text-sm font-bold">Take Photo</span>
+                  <span className="text-sm font-bold">{t('takePhoto')}</span>
                 </button>
                 <button
                   type="button"
@@ -182,7 +184,7 @@ export default function ScanCollectionModal({
                   className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                 >
                   <Upload size={28} />
-                  <span className="text-sm font-bold">Upload Photo</span>
+                  <span className="text-sm font-bold">{t('uploadPhoto')}</span>
                 </button>
               </div>
               <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
@@ -209,7 +211,7 @@ export default function ScanCollectionModal({
                   disabled={stage === 'scanning'}
                   className="flex-1 h-11 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
                 >
-                  Retake
+                  {t('retake')}
                 </button>
                 <button
                   type="button"
@@ -218,7 +220,7 @@ export default function ScanCollectionModal({
                   className="flex-1 h-11 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-70 transition-colors"
                 >
                   {stage === 'scanning' ? <Loader2 size={18} className="animate-spin" /> : <ScanLine size={18} />}
-                  {stage === 'scanning' ? 'Reading sheet…' : 'Scan Now'}
+                  {stage === 'scanning' ? t('readingSheet') : t('scanNow')}
                 </button>
               </div>
             </div>
@@ -227,7 +229,7 @@ export default function ScanCollectionModal({
           {(stage === 'review' || stage === 'applying') && (
             <div className="space-y-3">
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Check each row before applying — pick the right party if the match looks wrong, and adjust any Cash/Chq amount AI misread. Unchecked rows are skipped.
+                {t('scanReviewDesc')}
               </p>
               <div className="space-y-2">
                 {rows.map((row, idx) => {
@@ -238,13 +240,13 @@ export default function ScanCollectionModal({
                         <input type="checkbox" checked={row.selected} onChange={(e) => updateRow(idx, { selected: e.target.checked })}
                           className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs text-slate-400 truncate" title={row.party}>Scanned: &quot;{row.party}&quot;</p>
+                          <p className="text-xs text-slate-400 truncate" title={row.party}>{t('scannedPrefix')} &quot;{row.party}&quot;</p>
                           <select
                             value={row.partyId}
                             onChange={(e) => updateRow(idx, { partyId: e.target.value, selected: true })}
                             className="w-full text-sm font-bold bg-transparent border-b border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none py-0.5"
                           >
-                            <option value="">— No match, skip —</option>
+                            <option value="">{t('noMatchSkip')}</option>
                             {parties.map((p) => (
                               <option key={p.id} value={p.id}>{p.shopName || p.name}{p.mobile ? ` (${p.mobile})` : ''}</option>
                             ))}
@@ -261,7 +263,7 @@ export default function ScanCollectionModal({
                       </div>
                       <div className="grid grid-cols-3 gap-2 pl-6">
                         <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Cash</label>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">{t('colCash')}</label>
                           <div className="relative">
                             <IndianRupee size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input type="number" min="0" value={row.cashInput} onChange={(e) => updateRow(idx, { cashInput: e.target.value })}
@@ -269,7 +271,7 @@ export default function ScanCollectionModal({
                           </div>
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Chq</label>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">{t('colChq')}</label>
                           <div className="relative">
                             <IndianRupee size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input type="number" min="0" value={row.chqInput} onChange={(e) => updateRow(idx, { chqInput: e.target.value })}
@@ -277,7 +279,7 @@ export default function ScanCollectionModal({
                           </div>
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase" title="Noted from the photo — not applied automatically">Dis (noted)</label>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase" title="Noted from the photo — not applied automatically">{t('colDisNoted')}</label>
                           <div className="h-8 px-2 flex items-center text-sm text-slate-400 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
                             {row.dis ? `₹${row.dis.toLocaleString('en-IN')}` : '—'}
                           </div>
@@ -305,7 +307,7 @@ export default function ScanCollectionModal({
               className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
             >
               {stage === 'applying' ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
-              {stage === 'applying' ? 'Applying…' : `Apply ${selectedCount} Payment${selectedCount === 1 ? '' : 's'}`}
+              {stage === 'applying' ? t('applying') : t('applyNPayments', { count: selectedCount })}
             </button>
           </div>
         )}
