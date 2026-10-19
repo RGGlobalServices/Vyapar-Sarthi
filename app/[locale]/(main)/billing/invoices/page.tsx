@@ -146,7 +146,7 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
               <RotateCcw size={18} className="text-orange-500" />
             </div>
             <div>
-              <h2 className="font-black text-slate-900 dark:text-white">Return / Refund</h2>
+              <h2 className="font-black text-slate-900 dark:text-white">{t('returnRefundTitle') || 'Return / Refund'}</h2>
               <p className="text-xs text-slate-500">INV-{invoice.id.substring(0, 8).toUpperCase()}</p>
             </div>
           </div>
@@ -158,7 +158,7 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
             <div className="flex justify-center py-8"><Loader2 className="animate-spin text-emerald-500" size={24} /></div>
           ) : (
             <>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select items to return:</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('selectItemsToReturn') || 'Select items to return:'}</p>
               <div className="space-y-2">
                 {returnItems.map((item, idx) => (
                   <div key={item.item_id} className={cn(
@@ -193,22 +193,22 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
                 ))}
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Reason</label>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">{t('returnReasonLabel') || 'Reason'}</label>
                 <select
                   value={reason}
                   onChange={e => setReason(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
-                  <option>Customer Return</option>
-                  <option>Damaged Product</option>
-                  <option>Wrong Item Delivered</option>
-                  <option>Quality Issue</option>
-                  <option>Expired Product</option>
-                  <option>Other</option>
+                  <option value="Customer Return">{t('reasonCustomerReturn') || 'Customer Return'}</option>
+                  <option value="Damaged Product">{t('reasonDamagedProduct') || 'Damaged Product'}</option>
+                  <option value="Wrong Item Delivered">{t('reasonWrongItem') || 'Wrong Item Delivered'}</option>
+                  <option value="Quality Issue">{t('reasonQualityIssue') || 'Quality Issue'}</option>
+                  <option value="Expired Product">{t('reasonExpiredProduct') || 'Expired Product'}</option>
+                  <option value="Other">{t('reasonOther') || 'Other'}</option>
                 </select>
               </div>
               <div className="bg-orange-50 dark:bg-orange-500/5 border border-orange-200 dark:border-orange-500/20 rounded-xl p-3 text-xs text-orange-700 dark:text-orange-400">
-                ⚠️ Return will automatically update stock, customer ledger, and reports.
+                {t('returnAutoUpdateWarning') || '⚠️ Return will automatically update stock, customer ledger, and reports.'}
               </div>
             </>
           )}
@@ -216,7 +216,7 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
 
         <div className="p-5 border-t border-slate-200 dark:border-slate-800 flex gap-3">
           <button onClick={onClose} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            Cancel
+            {t('cancel') || 'Cancel'}
           </button>
           <button
             onClick={handleSubmit}
@@ -224,7 +224,7 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
             className="flex-[2] bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
-            {loading ? 'Processing...' : 'Process Return'}
+            {loading ? (t('processing') || 'Processing...') : (t('processReturn') || 'Process Return')}
           </button>
         </div>
       </div>
@@ -466,8 +466,8 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
   };
 
   const submit = async () => {
-    if (items.length === 0) { setError('At least one item is required.'); return; }
-    if (due > 0 && !customerName.trim()) { setError('A customer name is required when the bill isn\'t fully paid (Udhar).'); return; }
+    if (items.length === 0) { setError(t('atLeastOneItemRequired') || 'At least one item is required.'); return; }
+    if (due > 0 && !customerName.trim()) { setError(t('customerNameRequiredForUdhar') || 'A customer name is required when the bill isn\'t fully paid (Udhar).'); return; }
     setSaving(true); setError('');
     try {
       await api.patch(`/billing/${invoice.id}`, {
@@ -487,7 +487,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
       });
       onSaved();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Failed to save changes.');
+      setError(err?.response?.data?.detail || err?.response?.data?.error || err?.message || t('failedToSaveChanges') || 'Failed to save changes.');
     } finally { setSaving(false); }
   };
 
@@ -500,7 +500,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
               <Pencil size={16} className="text-indigo-500" />
             </div>
             <div>
-              <h2 className="font-black text-slate-900 dark:text-white">Edit Bill</h2>
+              <h2 className="font-black text-slate-900 dark:text-white">{t('editBillTitle') || 'Edit Bill'}</h2>
               <p className="text-xs text-slate-500">{invoice.invoice_number || `INV-${invoice.id.substring(0, 8).toUpperCase()}`}</p>
             </div>
           </div>
@@ -514,19 +514,19 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
             <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Customer Name</span>
-                  <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Walk-in"
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t('customerNameLabel') || 'Customer Name'}</span>
+                  <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t('walkIn') || 'Walk-in'}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Mobile</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t('mobileLabel') || 'Mobile'}</span>
                   <input value={customerMobile} onChange={e => setCustomerMobile(e.target.value)} inputMode="numeric"
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </label>
               </div>
 
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Items</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t('itemsEditLabel') || 'Items'}</span>
                 <div className="space-y-2">
                   {items.map((item, idx) => (
                     <div key={item.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl p-2.5">
@@ -553,7 +553,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
               </div>
 
               <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Payment Method</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t('paymentMethodLabel') || 'Payment Method'}</span>
                 <div className="flex gap-2 flex-wrap">
                   {EDIT_PAYMENT_TYPES.map(pt => (
                     <button key={pt} type="button" onClick={() => setPaymentType(pt)}
@@ -564,23 +564,23 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                   ))}
                 </div>
                 {wasSplitOrEmi && (
-                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1.5">This bill was originally {invoice.payment_type} — editing converts it to a single payment mode above.</p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1.5">{t('splitEmiConvertNote', { type: invoice.payment_type }) || `This bill was originally ${invoice.payment_type} — editing converts it to a single payment mode above.`}</p>
                 )}
               </div>
 
               <label className="block">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Amount Paid</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">{t('amountPaidLabel') || 'Amount Paid'}</span>
                 <input type="number" min="0" step="0.01" value={amountPaid} onChange={e => setAmountPaid(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </label>
 
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 flex items-center justify-between text-sm">
-                <span className="text-slate-500 font-semibold">Bill Total</span>
+                <span className="text-slate-500 font-semibold">{t('billTotalLabel') || 'Bill Total'}</span>
                 <span className="font-black text-slate-900 dark:text-white">₹{total.toLocaleString('en-IN')}</span>
               </div>
               {due > 0 && (
                 <div className="bg-orange-50 dark:bg-orange-500/5 border border-orange-200 dark:border-orange-500/20 rounded-xl p-3 text-xs text-orange-700 dark:text-orange-400">
-                  ₹{due.toLocaleString('en-IN')} will remain as Udhar against {customerName.trim() || 'this customer'}.
+                  {t('udharRemainingNote', { amount: due.toLocaleString('en-IN'), name: customerName.trim() || (t('thisCustomer') || 'this customer') }) || `₹${due.toLocaleString('en-IN')} will remain as Udhar against ${customerName.trim() || 'this customer'}.`}
                 </div>
               )}
               {error && <p className="text-sm text-red-500 font-semibold">{error}</p>}
@@ -590,7 +590,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
 
         <div className="p-5 border-t border-slate-200 dark:border-slate-800 flex gap-3 shrink-0">
           <button onClick={onClose} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            Cancel
+            {t('cancel') || 'Cancel'}
           </button>
           <button
             onClick={submit}
@@ -598,7 +598,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
             className="flex-[2] bg-indigo-500 text-white py-3 rounded-xl font-bold hover:bg-indigo-400 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {saving ? 'Saving...' : 'Save Changes'}
+            {saving ? (t('saving') || 'Saving...') : (t('saveChanges') || 'Save Changes')}
           </button>
         </div>
       </div>
@@ -812,9 +812,9 @@ export default function InvoiceHistoryPage() {
           <div>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <ClipboardList size={22} className="text-emerald-500" />
-              Invoice History
+              {t('invoiceHistoryTitle') || 'Invoice History'}
             </h1>
-            <p className="text-slate-500 text-sm font-medium">{totalCount} records · {profile?.shopName || 'Your Store'}</p>
+            <p className="text-slate-500 text-sm font-medium">{t('recordsCount', { count: totalCount }) || `${totalCount} records`} · {profile?.shopName || (t('yourStore') || 'Your Store')}</p>
           </div>
         </div>
         <button
@@ -823,7 +823,7 @@ export default function InvoiceHistoryPage() {
           className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-sm shadow-sm disabled:opacity-60"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Refresh
+          {t('refresh') || 'Refresh'}
         </button>
       </div>
 
@@ -854,7 +854,7 @@ export default function InvoiceHistoryPage() {
                     : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:text-emerald-600'
                 )}
               >
-                {d === 'all' ? 'All Time' : d === 'today' ? 'Today' : d === 'yesterday' ? 'Yesterday' : d === '7d' ? '7 Days' : '30 Days'}
+                {d === 'all' ? (t('filterAllTime') || 'All Time') : d === 'today' ? (t('filterToday') || 'Today') : d === 'yesterday' ? (t('filterYesterday') || 'Yesterday') : d === '7d' ? (t('filter7Days') || '7 Days') : (t('filter30Days') || '30 Days')}
               </button>
             ))}
             <button
@@ -867,7 +867,7 @@ export default function InvoiceHistoryPage() {
               )}
             >
               <SlidersHorizontal size={13} />
-              Filters
+              {t('filtersBtn') || 'Filters'}
               {(paymentFilter !== 'All' || statusFilter !== 'All' || dateFilter === 'custom') && (
                 <span className="w-4 h-4 bg-emerald-500 text-white rounded-full text-[9px] flex items-center justify-center">!</span>
               )}
@@ -879,13 +879,13 @@ export default function InvoiceHistoryPage() {
         {showFilters && (
           <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Payment Mode</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{t('paymentModeFilter') || 'Payment Mode'}</label>
               <select
                 value={paymentFilter}
                 onChange={e => { setPaymentFilter(e.target.value); setPage(1); }}
                 className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="All">All Modes</option>
+                <option value="All">{t('allModes') || 'All Modes'}</option>
                 <option value="Cash">Cash</option>
                 <option value="UPI">UPI</option>
                 <option value="Card">Card</option>
@@ -895,20 +895,20 @@ export default function InvoiceHistoryPage() {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Payment Status</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{t('paymentStatusFilter') || 'Payment Status'}</label>
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="All">All Statuses</option>
-                <option value="Paid">Paid</option>
-                <option value="Partial">Partially Paid</option>
-                <option value="Credit">Credit (Udhar)</option>
+                <option value="All">{t('allStatuses') || 'All Statuses'}</option>
+                <option value="Paid">{t('statusPaid') || 'Paid'}</option>
+                <option value="Partial">{t('statusPartiallyPaid') || 'Partially Paid'}</option>
+                <option value="Credit">{t('statusCreditUdhar') || 'Credit (Udhar)'}</option>
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Custom Date Range</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{t('customDateRange') || 'Custom Date Range'}</label>
               <div className="flex items-center gap-2">
                 <input
                   type="date"
@@ -916,7 +916,7 @@ export default function InvoiceHistoryPage() {
                   onChange={e => { setCustomFrom(e.target.value); setDateFilter('custom'); setPage(1); }}
                   className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
-                <span className="text-slate-400 text-xs">to</span>
+                <span className="text-slate-400 text-xs">{t('toLabel') || 'to'}</span>
                 <input
                   type="date"
                   value={customTo}
@@ -930,7 +930,7 @@ export default function InvoiceHistoryPage() {
                 onClick={() => { setPaymentFilter('All'); setStatusFilter('All'); setDateFilter('all'); setCustomFrom(''); setCustomTo(''); setPage(1); }}
                 className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 font-bold px-3 py-2 border border-red-200 dark:border-red-500/30 rounded-lg bg-red-50 dark:bg-red-500/5 transition-colors"
               >
-                <X size={12} />Clear Filters
+                <X size={12} />{t('clearFilters') || 'Clear Filters'}
               </button>
             )}
           </div>
@@ -942,18 +942,18 @@ export default function InvoiceHistoryPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Loader2 className="animate-spin text-emerald-500" size={36} />
-            <p className="text-slate-500 font-medium">Loading invoices...</p>
+            <p className="text-slate-500 font-medium">{t('loadingInvoices') || 'Loading invoices...'}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center">
               <FileText size={28} className="text-slate-400" />
             </div>
-            <p className="text-slate-700 dark:text-slate-300 font-bold text-lg">No invoices found</p>
-            <p className="text-slate-400 text-sm">Try adjusting your search or filters</p>
+            <p className="text-slate-700 dark:text-slate-300 font-bold text-lg">{t('noInvoicesFound') || 'No invoices found'}</p>
+            <p className="text-slate-400 text-sm">{t('adjustSearchFilters') || 'Try adjusting your search or filters'}</p>
             {(search || paymentFilter !== 'All' || dateFilter !== 'all') && (
               <button onClick={() => { setSearch(''); setPaymentFilter('All'); setDateFilter('all'); setStatusFilter('All'); }} className="mt-2 text-sm text-emerald-500 hover:text-emerald-600 font-bold underline">
-                Clear all filters
+                {t('clearAllFilters') || 'Clear all filters'}
               </button>
             )}
           </div>
@@ -983,15 +983,15 @@ export default function InvoiceHistoryPage() {
                       />
                     </th>
                   )}
-                  <th className="px-5 py-4">Invoice</th>
-                  <th className="px-5 py-4">Date & Time</th>
-                  <th className="px-5 py-4">Customer</th>
-                  <th className="px-5 py-4 text-right">Total</th>
-                  <th className="px-5 py-4 text-right">Collected</th>
-                  <th className="px-5 py-4 text-right">Due</th>
-                  <th className="px-5 py-4 text-center">Mode</th>
-                  <th className="px-5 py-4 text-center">Status</th>
-                  <th className="px-5 py-4 text-center">Actions</th>
+                  <th className="px-5 py-4">{t('colInvoice') || 'Invoice'}</th>
+                  <th className="px-5 py-4">{t('colDateTime') || 'Date & Time'}</th>
+                  <th className="px-5 py-4">{t('colCustomer') || 'Customer'}</th>
+                  <th className="px-5 py-4 text-right">{t('colTotal') || 'Total'}</th>
+                  <th className="px-5 py-4 text-right">{t('colCollected') || 'Collected'}</th>
+                  <th className="px-5 py-4 text-right">{t('colDue') || 'Due'}</th>
+                  <th className="px-5 py-4 text-center">{t('colMode') || 'Mode'}</th>
+                  <th className="px-5 py-4 text-center">{t('colStatus') || 'Status'}</th>
+                  <th className="px-5 py-4 text-center">{t('colActions') || 'Actions'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -1052,7 +1052,7 @@ export default function InvoiceHistoryPage() {
                       </td>
                       {/* Customer */}
                       <td className="px-5 py-3.5">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[130px]">{inv.customer_name || 'Walk-in'}</p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[130px]">{inv.customer_name || (t('walkIn') || 'Walk-in')}</p>
                         {inv.customer_mobile && <p className="text-[10px] text-slate-500 font-mono">{inv.customer_mobile}</p>}
                       </td>
                       {/* Total */}
@@ -1078,7 +1078,7 @@ export default function InvoiceHistoryPage() {
                       {/* Status */}
                       <td className="px-5 py-3.5 text-center">
                         <span className={cn('px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border', statusBadge.cls)}>
-                          {statusBadge.label}
+                          {status === 'paid' ? (t('statusPaid') || 'Paid') : status === 'partial' ? (t('statusPartial') || 'Partial') : (t('statusCredit') || 'Credit')}
                         </span>
                       </td>
                       {/* Actions */}
@@ -1115,7 +1115,7 @@ export default function InvoiceHistoryPage() {
                           </button>
                           <button
                             onClick={() => (inv as any).pricing_model === 'mill_v2' ? alert(tMill('actionsBlockedMill')) : setEditInvoice(inv)}
-                            title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : 'Edit Bill'}
+                            title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : (t('editBillTooltip') || 'Edit Bill')}
                             aria-disabled={(inv as any).pricing_model === 'mill_v2' || undefined}
                             data-testid="inv-action-edit"
                             className={cn('w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all', (inv as any).pricing_model === 'mill_v2' && 'opacity-40 cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-500')}
@@ -1146,7 +1146,7 @@ export default function InvoiceHistoryPage() {
         {!loading && filtered.length > 0 && (
           <div className="flex items-center justify-between px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20">
             <p className="text-xs text-slate-500 font-medium">
-              Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} invoices
+              {t('showingRecords', { from: ((page - 1) * PAGE_SIZE) + 1, to: Math.min(page * PAGE_SIZE, totalCount), total: totalCount }) || `Showing ${((page - 1) * PAGE_SIZE) + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount} invoices`}
             </p>
             <div className="flex items-center gap-2">
               <button

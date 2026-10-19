@@ -855,7 +855,7 @@ export default function ReturnsPage() {
                               <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                                 {t('mixPaymentBreakdown') || 'Enter amount for each method'}
                               </p>
-                              {([['cash', '💵 Cash'], ['upi', '📱 UPI'], ['card', '💳 Card']] as const).map(([key, label]) => (
+                              {([['cash', t('mixCash') || '💵 Cash'], ['upi', t('mixUpi') || '📱 UPI'], ['card', t('mixCard') || '💳 Card']] as const).map(([key, label]) => (
                                 <div key={key} className="flex items-center gap-2">
                                   <span className="text-xs text-slate-600 dark:text-slate-300 w-16 shrink-0">{label}</span>
                                   <div className="flex-1 flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
@@ -880,8 +880,8 @@ export default function ReturnsPage() {
                                 const remaining = Math.round((exchangeDifference - mixTotal) * 100) / 100;
                                 return (
                                   <div className={cn('flex justify-between text-xs font-bold pt-1 border-t border-indigo-200 dark:border-indigo-800', remaining === 0 ? 'text-emerald-600 dark:text-emerald-400' : remaining > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400')}>
-                                    <span>{remaining === 0 ? '✓ All set' : remaining > 0 ? `₹${remaining.toLocaleString('en-IN')} remaining` : `₹${Math.abs(remaining).toLocaleString('en-IN')} over`}</span>
-                                    <span>Total: ₹{mixTotal.toLocaleString('en-IN')}</span>
+                                    <span>{remaining === 0 ? (t('mixAllSet') || '✓ All set') : remaining > 0 ? (t('mixRemaining', { n: remaining.toLocaleString('en-IN') }) || `₹${remaining.toLocaleString('en-IN')} remaining`) : (t('mixOver', { n: Math.abs(remaining).toLocaleString('en-IN') }) || `₹${Math.abs(remaining).toLocaleString('en-IN')} over`)}</span>
+                                    <span>{t('mixTotal', { n: mixTotal.toLocaleString('en-IN') }) || `Total: ₹${mixTotal.toLocaleString('en-IN')}`}</span>
                                   </div>
                                 );
                               })()}

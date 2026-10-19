@@ -152,7 +152,7 @@ ${referralLink}`;
               className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-white dark:text-slate-900 font-bold rounded-xl hover:bg-emerald-400 transition-all"
             >
               {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-              {copied ? 'Copied!' : (t('copyLink') || 'Copy Referral Link')}
+              {copied ? (t('copied') || 'Copied!') : (t('copyLink') || 'Copy Referral Link')}
             </button>
             <button
               onClick={shareOnWhatsApp}
@@ -189,11 +189,11 @@ ${referralLink}`;
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-800">
-                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Name</th>
-                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Package</th>
-                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Status</th>
-                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Expiry</th>
-                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">Rewarded</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">{t('colName') || 'Name'}</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">{t('colPackage') || 'Package'}</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">{t('colStatus') || 'Status'}</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">{t('colExpiry') || 'Expiry'}</th>
+                    <th className="text-left p-3 text-slate-500 dark:text-slate-400 text-sm font-medium">{t('colRewarded') || 'Rewarded'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -229,12 +229,12 @@ ${referralLink}`;
                       <td className="p-3 text-slate-600 dark:text-slate-300 text-sm">
                         {member.subscription_expiry
                           ? fmtDate(member.subscription_expiry)
-                          : 'N/A'}
+                          : (t('na') || 'N/A')}
                       </td>
                       <td className="p-3">
                         {member.rewarded
-                          ? <span className="text-emerald-500 dark:text-emerald-400 text-sm font-bold">✅ 1 Month</span>
-                          : <span className="text-slate-500 text-sm">Pending</span>}
+                          ? <span className="text-emerald-500 dark:text-emerald-400 text-sm font-bold">{t('rewardedBadge') || '✅ 1 Month'}</span>
+                          : <span className="text-slate-500 text-sm">{t('pending') || 'Pending'}</span>}
                       </td>
                     </tr>
                   ))}

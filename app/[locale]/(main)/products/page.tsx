@@ -165,6 +165,7 @@ function VariantChipGrid({
   entries: { key: string; label: string; title: string; toneClass: string }[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const t = useTranslations('Products');
   const COLLAPSED = 9;
   if (entries.length === 0) return null;
   const shown = expanded ? entries : entries.slice(0, COLLAPSED);
@@ -190,7 +191,7 @@ function VariantChipGrid({
           onClick={(ev) => { ev.stopPropagation(); setExpanded(v => !v); }}
           className="mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
         >
-          {expanded ? 'Show less' : `Show all (${entries.length})`}
+          {expanded ? (t('showLess') || 'Show less') : (t('showAll', { n: entries.length }) || `Show all (${entries.length})`)}
         </button>
       )}
     </div>

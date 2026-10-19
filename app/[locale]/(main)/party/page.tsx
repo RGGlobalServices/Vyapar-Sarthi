@@ -1402,7 +1402,7 @@ function PartiesPanel() {
       setForm(initialPartyForm);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to add party');
+      toast.error(t('partyAddError') || 'Failed to add party');
     } finally {
       setIsSaving(false);
     }
@@ -1452,14 +1452,14 @@ function PartiesPanel() {
     setIsEditing(true);
     try {
       await api.put(`/crm/customers/${editingParty.id}`, { ...form, customerType: 'party' });
-      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते अपडेट केले' : locale === 'hi' ? 'किसान खाता अपडेट किया' : 'Farmer updated successfully') : 'Party updated successfully');
+      toast.success(isMill ? (locale === 'mr' ? 'शेतकरी खाते अपडेट केले' : locale === 'hi' ? 'किसान खाता अपडेट किया' : 'Farmer updated successfully') : (t('partyUpdated') || 'Party updated successfully'));
       await mutateParties();
       setEditingParty(null);
       setSelectedParty(null);
       setForm(initialPartyForm);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to update party');
+      toast.error(t('partyUpdateError') || 'Failed to update party');
     } finally {
       setIsEditing(false);
     }
@@ -1469,13 +1469,13 @@ function PartiesPanel() {
     if (!deletingParty) return;
     try {
       await api.delete(`/crm/customers/${deletingParty.id}`);
-      toast.success('Party deleted successfully');
+      toast.success(t('partyDeleted') || 'Party deleted successfully');
       mutateParties();
       setDeletingParty(null);
       setSelectedParty(null);
     } catch (e) {
       console.error(e);
-      toast.error('Failed to delete party');
+      toast.error(t('partyDeleteError') || 'Failed to delete party');
     }
   };
 
@@ -1502,13 +1502,13 @@ function PartiesPanel() {
       if (failed.length > 0) {
         toast.error(`${failed.length} ${failed.length === 1 ? 'party' : 'parties'} could not be deleted`);
       } else {
-        toast.success('Parties deleted successfully');
+        toast.success(t('partiesDeletedSuccess') || 'Parties deleted successfully');
       }
       await mutateParties();
       clearSelection();
     } catch (e) {
       console.error(e);
-      toast.error('Failed to delete parties');
+      toast.error(t('partiesDeleteError') || 'Failed to delete parties');
     } finally {
       setBulkDeletingParties(false);
       setConfirmBulkDeleteParties(false);
@@ -1519,7 +1519,7 @@ function PartiesPanel() {
   const handleDownloadCollectionRegister = async () => {
     const outstanding = filtered.filter(p => (p.totalDue || 0) > 0);
     if (outstanding.length === 0) {
-      toast.error('No outstanding parties to collect from');
+      toast.error(t('noOutstandingParties') || 'No outstanding parties to collect from');
       return;
     }
     setGeneratingRegister(true);
@@ -1541,7 +1541,7 @@ function PartiesPanel() {
       });
     } catch (e) {
       console.error(e);
-      toast.error('Failed to generate collection register');
+      toast.error(t('generateCollectionError') || 'Failed to generate collection register');
     } finally {
       setGeneratingRegister(false);
     }
@@ -2227,7 +2227,7 @@ function CustomersPanel() {
       resetForm();
     } catch (e) {
       console.error(e);
-      toast.error('Failed to add customer / party');
+      toast.error(t('customerUpdateError') || 'Failed to add customer / party');
     } finally {
       setIsSaving(false);
     }
@@ -2278,14 +2278,14 @@ function CustomersPanel() {
     setIsEditing(true);
     try {
       await api.put(`/crm/customers/${editingCustomer.id}`, { ...form, customerType: 'customer' });
-      toast.success('Customer / Party updated successfully');
+      toast.success(t('customerUpdated') || 'Customer / Party updated successfully');
       await mutateCustomers();
       setEditingCustomer(null);
       setSelectedCustomer(null);
       resetForm();
     } catch (e) {
       console.error(e);
-      toast.error('Failed to update customer / party');
+      toast.error(t('partyUpdateError') || 'Failed to update customer / party');
     } finally {
       setIsEditing(false);
     }
@@ -2339,7 +2339,7 @@ function CustomersPanel() {
       });
     } catch (e) {
       console.error(e);
-      toast.error('Failed to generate collection register');
+      toast.error(t('generateCollectionError') || 'Failed to generate collection register');
     } finally {
       setGeneratingRegister(false);
     }
