@@ -974,7 +974,7 @@ export default function WholesaleProductsUI() {
           </p>
         </div>
         <div className="flex gap-2">
-          {!isMillShop && <ExpandViewButton />}
+          {/* ExpandViewButton removed — not needed in day-to-day workflow */}
           <ExportButton
             filename="products"
             title="Product List"
@@ -1042,19 +1042,11 @@ export default function WholesaleProductsUI() {
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm flex items-center gap-2"
           >
             <Plus size={18} />
-            Bulk Add / Variants
+            {t('bulkAdd')}
           </button>
           )}
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => mutateProducts()} />}
-          {!isMillShop && (
-          <button
-            onClick={() => setShowVariantCheck(true)}
-            title="Find products whose size/colour stock does not match, or one model listed many times"
-            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
-          >
-            Check variants
-          </button>
-          )}
+          {/* checkVariants button hidden — not needed in day-to-day workflow */}
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => mutateProducts()} />}
           {!isMillShop && (
           <button
@@ -1062,7 +1054,7 @@ export default function WholesaleProductsUI() {
             title="Lot-wise stock, prices and sales"
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm"
           >
-            Lots
+            {t('lotsBtn')}
           </button>
           )}
           {showLotReport && <LotReportModal onClose={() => setShowLotReport(false)} />}
