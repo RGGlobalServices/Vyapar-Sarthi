@@ -1013,7 +1013,22 @@
     "fillAll": "सभी आकार",
     "fillAllApply": "भरें",
     "nameRequired": "उत्पाद का नाम आवश्यक है",
-    "validAmount": "वैध मात्रा दर्ज करें"
+    "validAmount": "वैध मात्रा दर्ज करें",
+    "product": "उत्पाद",
+    "change": "बदलें",
+    "searchProductPlaceholder": "नाम, बारकोड या SKU से खोजें...",
+    "noProductsFound": "कोई उत्पाद नहीं मिला।",
+    "quantityPerVariant": "प्रत्येक रंग/आकार अनुसार मात्रा",
+    "quantityPerVariantHint": "प्रत्येक के लिए कितना मिल रहा है दर्ज करें — बाकी खाली छोड़ें।",
+    "colour": "रंग",
+    "enterAtLeastOneVariantQty": "कम से कम एक रंग/आकार के लिए मात्रा दर्ज करें।",
+    "sourceLabel": "स्रोत",
+    "supplierPurchase": "सप्लायर (खरीद)",
+    "byProduct": "उप-उत्पाद",
+    "noByProductWaiting": "स्टॉक में जोड़ने के लिए कोई उप-उत्पाद प्रतीक्षारत नहीं है। उत्पादन पूर्ण होते ही तैयार माल Products में आ जाता है।",
+    "selectByProduct": "उप-उत्पाद चुनें",
+    "kgRemaining": "{qty} Kg शेष",
+    "kgWillBeAdded": "{qty} Kg {name} के स्टॉक में जोड़ा जाएगा।"
   },
   "StockTake": {
     "title": "स्टॉक टेक",

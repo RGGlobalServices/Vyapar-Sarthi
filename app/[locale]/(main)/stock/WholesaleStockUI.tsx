@@ -601,7 +601,7 @@ export default function WholesaleStockUI() {
               <button onClick={() => setStockSection(s => s === 'stockTake' ? 'none' : 'stockTake')}
                 className={cn('flex items-center gap-1.5 px-3 py-1.5 font-semibold rounded-lg transition-all text-xs',
                   stockSection === 'stockTake' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
-                <ListChecks size={14} /> Stock Take
+                <ListChecks size={14} /> {t('stockTake')}
               </button>
               {isLiquor && (
                 <button onClick={() => setStockSection(s => s === 'mlMatrix' ? 'none' : 'mlMatrix')}

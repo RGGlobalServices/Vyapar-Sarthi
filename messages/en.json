@@ -1190,7 +1190,22 @@
     "fillAll": "All sizes",
     "fillAllApply": "Fill",
     "nameRequired": "Product name is required",
-    "validAmount": "Enter a valid quantity"
+    "validAmount": "Enter a valid quantity",
+    "product": "Product",
+    "change": "Change",
+    "searchProductPlaceholder": "Search by name, barcode or SKU...",
+    "noProductsFound": "No products found.",
+    "quantityPerVariant": "Quantity per Colour/Size",
+    "quantityPerVariantHint": "Enter how many you're receiving of each — leave the rest blank.",
+    "colour": "Colour",
+    "enterAtLeastOneVariantQty": "Enter a quantity for at least one colour/size.",
+    "sourceLabel": "Source",
+    "supplierPurchase": "Supplier (Purchase)",
+    "byProduct": "By-Product",
+    "noByProductWaiting": "No by-product is waiting to be added to stock. Finished goods are already live in Products the moment production finalizes.",
+    "selectByProduct": "Select a by-product",
+    "kgRemaining": "{qty} Kg remaining",
+    "kgWillBeAdded": "{qty} Kg will be added to {name}'s stock."
   },
   "StockTake": {
     "title": "Stock Take",

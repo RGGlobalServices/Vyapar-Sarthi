@@ -1013,7 +1013,22 @@
     "fillAll": "सर्व आकार",
     "fillAllApply": "भरा",
     "nameRequired": "उत्पादाचे नाव आवश्यक आहे",
-    "validAmount": "वैध प्रमाण प्रविष्ट करा"
+    "validAmount": "वैध प्रमाण प्रविष्ट करा",
+    "product": "उत्पाद",
+    "change": "बदला",
+    "searchProductPlaceholder": "नाव, बारकोड किंवा SKU ने शोधा...",
+    "noProductsFound": "कोणतेही उत्पाद सापडले नाही.",
+    "quantityPerVariant": "प्रत्येक रंग/आकारानुसार प्रमाण",
+    "quantityPerVariantHint": "प्रत्येकासाठी किती मिळत आहे ते प्रविष्ट करा — बाकी रिकामे सोडा.",
+    "colour": "रंग",
+    "enterAtLeastOneVariantQty": "किमान एका रंग/आकारासाठी प्रमाण प्रविष्ट करा.",
+    "sourceLabel": "स्रोत",
+    "supplierPurchase": "पुरवठादार (खरेदी)",
+    "byProduct": "उप-उत्पाद",
+    "noByProductWaiting": "स्टॉकमध्ये जोडण्यासाठी कोणताही उप-उत्पाद प्रतीक्षारत नाही. उत्पादन पूर्ण होताच तयार माल Products मध्ये आपोआप येतो.",
+    "selectByProduct": "उप-उत्पाद निवडा",
+    "kgRemaining": "{qty} Kg शिल्लक",
+    "kgWillBeAdded": "{qty} Kg {name} च्या स्टॉकमध्ये जोडले जाईल."
   },
   "StockTake": {
     "title": "स्टॉक टेक",

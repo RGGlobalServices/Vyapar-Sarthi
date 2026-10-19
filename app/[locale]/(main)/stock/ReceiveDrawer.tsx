@@ -253,32 +253,32 @@ export default function ReceiveDrawer({
         <form id="receive-form" onSubmit={handleReceive} className="space-y-4">
           {isMill && (
             <div data-testid="receive-source">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Source</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('sourceLabel')}</label>
               <div className="flex gap-2 text-xs font-bold">
                 <button type="button" onClick={() => setSource('supplier')}
-                  className={cn('flex-1 h-9 rounded-lg border', source === 'supplier' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>Supplier (Purchase)</button>
+                  className={cn('flex-1 h-9 rounded-lg border', source === 'supplier' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>{t('supplierPurchase')}</button>
                 <button type="button" onClick={() => setSource('byproduct')}
-                  className={cn('flex-1 h-9 rounded-lg border', source === 'byproduct' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>By-Product</button>
+                  className={cn('flex-1 h-9 rounded-lg border', source === 'byproduct' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300')}>{t('byProduct')}</button>
               </div>
             </div>
           )}
           {isMill && source === 'byproduct' ? (
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">By-Product *</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('byProduct')} *</label>
               {availableByProducts.length === 0 ? (
-                <p className="text-xs text-slate-400">No by-product is waiting to be added to stock. Finished goods are already live in Products the moment production finalizes — there's nothing separate to receive for those.</p>
+                <p className="text-xs text-slate-400">{t('noByProductWaiting')}</p>
               ) : (
                 <>
                   <select value={byProductId} onChange={e => setByProductId(e.target.value)}
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500">
-                    <option value="">Select a by-product</option>
+                    <option value="">{t('selectByProduct')}</option>
                     {availableByProducts.map((r: any) => (
-                      <option key={r.id} value={r.id}>{r.name} — {Math.max(0, (r.quantityKg || 0) - (r.soldKg || 0)).toLocaleString('en-IN')} Kg remaining</option>
+                      <option key={r.id} value={r.id}>{r.name} — {t('kgRemaining', { qty: Math.max(0, (r.quantityKg || 0) - (r.soldKg || 0)).toLocaleString('en-IN') })}</option>
                     ))}
                   </select>
                   {pickedByProduct && (
                     <p className="text-xs text-slate-500 mt-1.5">
-                      {Math.max(0, (pickedByProduct.quantityKg || 0) - (pickedByProduct.soldKg || 0)).toLocaleString('en-IN')} Kg will be added to {pickedProduct.name}'s stock.
+                      {t('kgWillBeAdded', { qty: Math.max(0, (pickedByProduct.quantityKg || 0) - (pickedByProduct.soldKg || 0)).toLocaleString('en-IN'), name: pickedProduct.name })}
                     </p>
                   )}
                 </>
