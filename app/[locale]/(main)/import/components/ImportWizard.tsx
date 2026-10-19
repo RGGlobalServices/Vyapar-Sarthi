@@ -1,6 +1,6 @@
 ﻿'use client';
 import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
-import { parseSizeRange } from '@/lib/sizeRange';
+import { parseSizeRange, SizeHint } from '@/lib/sizeRange';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
@@ -531,6 +531,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     } catch { setRowMatches([]); } finally { setCheckingMatches(false); }
   };
 
+  function detectSizeHintFromName(name: string): SizeHint {
+    const n = name.toLowerCase();
+    if (/shoe|sandal|chappal|chappla|boot|slipper|footwear|juta|joota|paduka|चप्पल|जोडा/.test(n)) return 'shoes';
+    if (/saree|sari|साडी|dupatta|duppata/.test(n)) return 'saree';
+    if (/meter|metre|कापड|मीटर/.test(n)) return 'fabric';
+    return 'auto';
+  }
+
   const splitTitles = async () => {
     const newRows: any[] = [];
     for (const r of previewData) {
@@ -543,7 +551,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         newRows.push(r);
         continue;
       }
-      const sizes = parseSizeRange(p.size || '');
+      const sizeHint = detectSizeHintFromName(String(r['Product Name'] ?? ''));
+      const sizes = parseSizeRange(p.size || '', { hint: sizeHint });
       if (sizes.length <= 1) {
         // Single size — one row, keep original name, fill Colour+Size only
         newRows.push({ ...r, __origName: r['Product Name'], Size: p.size, Colour: p.color });

@@ -15,7 +15,7 @@ export type ParsedTitle = {
 };
 
 const DIM = /(?<![\w./-])(\d{1,3}(?:\.\d+)?)\s*[xX*]\s*(\d{1,3}(?:\.\d+)?)(?![\w])/;
-const LETTER = /(?<![\w./-])(XXS|XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|FREE\s*SIZE|FREE)(?![\w])\s*$/i;
+const LETTER = /(?<![\w./-])(XXS|XS|S|M|L|XL|[2-6]XL|XXL|XXXL|XXXXL|XXXXXL|\d{1,2}Y|\d{1,2}M|FREE\s*SIZE|FREE|FS)(?![\w])\s*$/i;
 const SIZE_WORD = /(?<![\w./-])(?:SIZE|SZ)\s*[:\-]?\s*(\d{1,3}(?:\.\d+)?|XXS|XS|S|M|L|XL|XXL|XXXL)(?![\w])/i;
 
 const titleCase = (s: string) =>
