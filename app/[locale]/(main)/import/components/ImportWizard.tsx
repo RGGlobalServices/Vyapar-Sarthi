@@ -1,5 +1,6 @@
 ﻿'use client';
 import { parseVariantTitle, baseKey } from '@/lib/variantTitleParser';
+import { parseSizeRange } from '@/lib/sizeRange';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
@@ -531,24 +532,52 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   };
 
   const splitTitles = async () => {
-    const rows = previewData.map(r => {
-      if (String(r['Colour'] ?? '').trim() || String(r['Size'] ?? '').trim()) return r;
+    const newRows: any[] = [];
+    for (const r of previewData) {
+      if (String(r['Colour'] ?? '').trim() || String(r['Size'] ?? '').trim()) {
+        newRows.push(r);
+        continue;
+      }
       const p = parseVariantTitle(String(r['Product Name'] ?? ''));
-      if (p.confidence === 'low') return r;
-      return { ...r, __origName: r['Product Name'], 'Product Name': p.baseName, Size: p.size, Colour: p.color };
-    });
-    setPreviewData(rows);
-    validateData(rows, headers);
-    setRowDecisions(new Array(rows.length).fill(undefined));
-    await refreshMatches(rows);
+      if (p.confidence === 'low') {
+        newRows.push(r);
+        continue;
+      }
+      const sizes = parseSizeRange(p.size || '');
+      if (sizes.length <= 1) {
+        // Single size — one row, keep original name, fill Colour+Size only
+        newRows.push({ ...r, __origName: r['Product Name'], Size: p.size, Colour: p.color });
+      } else {
+        // Size range — expand into one row per size, each with EMPTY quantity
+        // so the user fills in the correct pieces per size rather than
+        // having the total auto-applied to every size (which inflates stock).
+        const origQty = r['Quantity'];
+        for (const sz of sizes) {
+          newRows.push({ ...r, __origName: r['Product Name'], __origQty: origQty, Size: sz, Colour: p.color, Quantity: '' });
+        }
+      }
+    }
+    setPreviewData(newRows);
+    validateData(newRows, headers);
+    setRowDecisions(new Array(newRows.length).fill(undefined));
+    await refreshMatches(newRows);
   };
 
   const undoSplitTitles = async () => {
-    const rows = previewData.map(r => {
-      if (r.__origName === undefined) return r;
-      const { __origName, ...rest } = r;
-      return { ...rest, 'Product Name': __origName, Size: '', Colour: '' };
-    });
+    // Collapse multiple rows that were expanded from the same original back to one row.
+    const seen = new Set<string>();
+    const rows: any[] = [];
+    for (const r of previewData) {
+      if (r.__origName === undefined) {
+        rows.push(r);
+        continue;
+      }
+      const key = String(r.__origName);
+      if (seen.has(key)) continue; // duplicate from range expansion — drop it
+      seen.add(key);
+      const { __origName, __origQty, ...rest } = r;
+      rows.push({ ...rest, 'Product Name': __origName, Size: '', Colour: '', Quantity: __origQty ?? rest['Quantity'] });
+    }
     setPreviewData(rows);
     validateData(rows, headers);
     setRowDecisions(new Array(rows.length).fill(undefined));
