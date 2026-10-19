@@ -320,6 +320,7 @@ function FgLotPackPickerModal({
   onClose: () => void;
   onConfirm: (totalKg: number, breakdown: Array<{ packType: string; packKg: number; count: number }>) => void;
 }) {
+  const t = useTranslations('Billing');
   const hasPacks = Array.isArray(lot.packs) && lot.packs.length > 0;
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [directKg, setDirectKg] = useState('');
