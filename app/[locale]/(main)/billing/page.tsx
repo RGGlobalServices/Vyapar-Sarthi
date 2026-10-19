@@ -692,11 +692,17 @@ function StandardBillingUI() {
         ? JSON.parse(product.size_variants)
         : (product.size_variants || {});
     } catch { productVariants = {}; }
-    const productHasVariants = Object.values(productVariants).some((v: any) => Number(v) > 0);
-    if (productHasVariants && !variant) {
-      variantSelectionLotRef.current = batchInfo || null;
-      setVariantSelectionProduct(product);
-      return;
+    const variantEntries = Object.entries(productVariants).filter(([, v]) => Number(v) > 0);
+    if (!variant) {
+      if (variantEntries.length === 1) {
+        // Exactly one variant in stock — skip the picker and add it directly.
+        return addToCart(product, variantEntries[0][0], forceAdd, batchInfo);
+      }
+      if (variantEntries.length > 1) {
+        variantSelectionLotRef.current = batchInfo || null;
+        setVariantSelectionProduct(product);
+        return;
+      }
     }
 
     // A genuine first click for this product+variant (not the lot-picker's

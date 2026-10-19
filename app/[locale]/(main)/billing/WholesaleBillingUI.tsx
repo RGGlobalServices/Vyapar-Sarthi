@@ -1157,13 +1157,20 @@ export default function WholesaleBillingUI() {
       return;
     }
 
-    // Udyog variant product (colour/size) with no variant chosen yet — ask
-    // which row before adding anything to the cart. Re-entering addToCart
+    // Udyog variant product (colour/size) with no variant chosen yet.
+    // If exactly one variant is in stock, skip the picker and add it directly.
+    // If two or more are in stock, show the picker. Re-entering addToCart
     // with a variant (from the picker below) skips this and falls through.
     if (product.productType === 'variant' && Array.isArray(product.variants) && product.variants.length > 0 && !variant) {
-      setVariantPickerSelections({});
-      setVariantSelectionProduct(product);
-      return;
+      const inStockVariants = product.variants.filter((v: any) => Number(v.stock) > 0);
+      if (inStockVariants.length === 1) {
+        return addToCart(product, variantRowKey(inStockVariants[0]), forceAdd, batchInfo, fgLotInfo);
+      }
+      if (inStockVariants.length > 1) {
+        setVariantPickerSelections({});
+        setVariantSelectionProduct(product);
+        return;
+      }
     }
 
     // Per-variant stock guard — the aggregate resolveStock() check above sums
