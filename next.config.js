@@ -56,6 +56,14 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Hostinger shared hosting has a strict thread limit — spawning the default
+  // number of Next.js build workers causes SIGABRT (os error 11). Disabling
+  // worker threads and capping CPUs to 1 keeps page-data collection
+  // single-threaded so the build completes on constrained servers.
+  experimental: {
+    workerThreads: false,
+    cpus: 1,
+  },
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma', 'bcryptjs'],
   webpack: (config, { isServer }) => {
     config.optimization.moduleIds = 'named';
