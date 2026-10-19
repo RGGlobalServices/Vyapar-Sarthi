@@ -1355,10 +1355,7 @@ function LegacyProductsUI() {
           </button>
           {showBulkAdd && <BulkVariantAddModal onClose={() => setShowBulkAdd(false)} onDone={() => invalidateProductCaches()} />}
           {confirmDialog}
-          <button onClick={() => setShowVariantCheck(true)} title="Find products whose size/colour stock does not match, or one model listed many times"
-            className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-            {t('checkVariants')}
-          </button>
+          {/* checkVariants button hidden — not needed in day-to-day workflow */}
           {newLotProduct && <NewLotModal product={newLotProduct} requestConfig={shopIdHeader(newLotProduct.shopId)} onClose={() => setNewLotProduct(null)} onDone={() => invalidateProductCaches()} />}
           <button onClick={() => setShowLotReport(true)} title="Lot-wise stock, prices and sales"
             className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
