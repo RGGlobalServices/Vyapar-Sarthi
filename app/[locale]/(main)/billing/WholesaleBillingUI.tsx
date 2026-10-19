@@ -2154,8 +2154,9 @@ export default function WholesaleBillingUI() {
                       </div>
                     );
                   }
-                  // Regular lots (non-mill or products without FG lots)
-                  if (lotsByProduct[String(p.id)]?.length > 1) {
+                  // Regular lots — only shown for mill (Bada Udyog) where per-lot pricing matters.
+                  // Udyog (wholesale) uses auto-FIFO instead: click the product, oldest lot is picked silently.
+                  if (isMill && lotsByProduct[String(p.id)]?.length > 1) {
                     return (
                       <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
                         <div className="px-4 pt-2.5 pb-1">

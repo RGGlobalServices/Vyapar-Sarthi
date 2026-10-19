@@ -78,7 +78,6 @@ export const PACKAGE_CONFIGS: Record<PackageType, PackageConfig> = {
     modules: [
       'dashboard',
       'orders',
-      'challans',
       'billing',
       'products',
       'party',
