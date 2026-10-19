@@ -1628,7 +1628,12 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                               type="text"
                               value={String(row[h] ?? '')}
                               onChange={(e) => handleCellEdit(i, h, e.target.value)}
-                              className="w-full min-w-[70px] px-3 py-1.5 bg-transparent border border-transparent rounded-lg hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
+                              className={`w-full min-w-[70px] px-3 py-1.5 border rounded-lg outline-none transition-colors focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 ${
+                                h === 'Quantity' && String(row[h] ?? '').trim() === '' && action !== 'skip'
+                                  ? 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-500 placeholder-red-300'
+                                  : 'bg-transparent border-transparent hover:border-slate-300 dark:hover:border-slate-700'
+                              }`}
+                              placeholder={h === 'Quantity' && String(row[h] ?? '').trim() === '' && action !== 'skip' ? '← भरा' : ''}
                             />
                             {PRICE_FIELD_LABELS.includes(h) && (
                               <button type="button" onClick={() => nudgeCell(i, h, 1)} title={`Increase by the amount above`}
