@@ -13,7 +13,7 @@ import { useBusinessStore } from '@/lib/businessStore';
 import { getBusinessConfig, BusinessType } from '@/lib/businessConfig';
 import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
-import { getBaseAmount, getGstAmount, getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
+import { getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
 
 // Inner component uses useSearchParams — must be wrapped in Suspense
@@ -1194,8 +1194,6 @@ function SettingsPageInner() {
                 const c = colorMap[plan.color];
                 const isCurrent = currentPlan === plan.key || (plan.key === 'shop' && (currentPlan === 'starter' || !currentPlan));
                 const isUpgrade = !isCurrent && PLAN_RANK[plan.key] > PLAN_RANK[currentPlan];
-                const baseAmount = getBaseAmount(plan.key, billingCycle);
-                const gstAmount = getGstAmount(baseAmount);
                 const totalAmount = getTotalAmount(plan.key, billingCycle);
                 const cycleUnit = billingCycle === 'yearly' ? '/year' : billingCycle === '5_years' ? '/5yr' : '/month';
                 const paymentHref = `/${locale}/payment?plan=${plan.key}&cycle=${billingCycle}`;
@@ -1221,10 +1219,9 @@ function SettingsPageInner() {
                         <span className={cn('text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider', c.badge)}>{plan.name}</span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-2">
-                        <span className={cn('text-3xl font-black', c.text)}>₹{baseAmount}</span>
-                        <span className="text-slate-500 text-sm">{cycleUnit} + GST</span>
+                        <span className={cn('text-3xl font-black', c.text)}>₹{totalAmount}</span>
+                        <span className="text-slate-500 text-sm">{cycleUnit}</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Total incl. GST: ₹{totalAmount} <span className="text-slate-400">(GST ₹{gstAmount})</span></p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{plan.tagline}</p>
                     </div>
                     <ul className="space-y-1.5 flex-1">

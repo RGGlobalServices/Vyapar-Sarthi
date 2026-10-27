@@ -105,9 +105,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ txnid:
                     ₹{(tx.baseAmount ?? tx.amount).toFixed(2)}
                   </td>
                 </tr>
-                {tx.baseAmount != null && tx.gstAmount != null && (
+                {tx.baseAmount != null && tx.gstAmount != null && tx.gstAmount > 0 && (
                   <tr>
-                    <td className="py-3 text-slate-500 text-sm">GST (18%)</td>
+                    <td className="py-3 text-slate-500 text-sm">GST</td>
                     <td className="py-3 text-right text-slate-500 text-sm">₹{tx.gstAmount.toFixed(2)}</td>
                   </tr>
                 )}

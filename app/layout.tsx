@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 };
 export const metadata: Metadata = {
   title: {
-    default: 'Vyapar Sarthi - Smart Business & POS Management App',
+    default: 'VyaparSarthii — Apne Business Ko Smart Banao',
     template: '%s | Vyapar Sarthi'
   },
   description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses. Manage inventory, billing, payments, and customers with ease.',
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_IN',
     url: 'https://vyaparsarthii.com',
-    title: 'Vyapar Sarthi - Smart Business & POS Management App',
+    title: 'VyaparSarthii — Apne Business Ko Smart Banao',
     description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses.',
     siteName: 'Vyapar Sarthi',
     images: [
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Vyapar Sarthi - Smart Business & POS Management App',
+    title: 'VyaparSarthii — Apne Business Ko Smart Banao',
     description: 'Vyapar Sarthi is an advanced management application for wholesalers, distributors, retail shops, and all types of businesses.',
     creator: '@vyaparsarthi',
     images: ['/og-image.jpg'],

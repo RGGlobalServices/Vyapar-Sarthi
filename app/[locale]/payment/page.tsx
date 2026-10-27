@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { Loader2, ShieldCheck, AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
-import { getBaseAmount, getGstAmount, getTotalAmount, type BillingCycle } from '@/lib/subscriptionPricing';
+import { getTotalAmount, type BillingCycle } from '@/lib/subscriptionPricing';
 
 const PLAN_NAMES: Record<string, string> = {
   shop:      'Dukaan',
@@ -25,8 +25,6 @@ function PaymentPageInner() {
   const forcePay = searchParams.get('force_pay') === '1';
   const errorParam = searchParams.get('error');
   const planName = PLAN_NAMES[plan] || plan;
-  const baseAmount = getBaseAmount(plan, cycle);
-  const gstAmount = getGstAmount(baseAmount);
   const planPrice = getTotalAmount(plan, cycle);
   const cycleUnit = cycle === 'yearly' ? 'year' : cycle === '5_years' ? '5 years' : 'month';
 
@@ -211,19 +209,13 @@ function PaymentPageInner() {
               ) : (
                 <>
                   <p className="text-2xl font-black text-emerald-400">
-                    ₹{baseAmount} <span className="text-sm font-bold text-slate-400">+ GST</span>
+                    ₹{planPrice}
                   </p>
                   <p className="text-xs text-slate-500">per {cycleUnit}</p>
                 </>
               )}
             </div>
           </div>
-          {!isTrialSwitch && (
-            <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Base ₹{baseAmount} + GST (18%) ₹{gstAmount}</span>
-              <span className="font-bold text-white">Total incl. GST: ₹{planPrice}</span>
-            </div>
-          )}
           <div className="mt-3 pt-3 border-t border-slate-800 space-y-1.5">
             {isTrialSwitch ? (
               <>
@@ -237,14 +229,14 @@ function PaymentPageInner() {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <ShieldCheck size={13} />
-                  You'll only pay ₹{planPrice} (incl. GST)/{cycleUnit} after the trial ends
+                  You'll only pay ₹{planPrice}/{cycleUnit} after the trial ends
                 </div>
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <CheckCircle size={13} />
-                  1 {cycleUnit} of full access — ₹{planPrice} (incl. GST)
+                  1 {cycleUnit} of full access — ₹{planPrice}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <CheckCircle size={13} />
@@ -335,7 +327,6 @@ function PaymentPageInner() {
             </p>
             <div className="bg-slate-900 rounded-xl p-3 text-xs font-mono text-slate-400 space-y-1">
               <p>Plan: <span className="text-emerald-400">{plan} ({cycle})</span></p>
-              <p>Base: <span className="text-emerald-400">₹{baseAmount}</span> + GST: <span className="text-emerald-400">₹{gstAmount}</span></p>
               <p>Amount: <span className="text-emerald-400">₹{planPrice}</span></p>
               <p>Validity: <span className="text-emerald-400">{cycle === 'yearly' ? '1 year' : cycle === '5_years' ? '5 years' : '30 days'}</span></p>
               <p>Renewal: <span className="text-emerald-400">manual — reminder before expiry</span></p>
