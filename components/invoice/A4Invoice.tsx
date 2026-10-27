@@ -474,6 +474,16 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                     <span>₹{inr(chargesTotal)}</span>
                   </div>
                 )}
+                {(() => {
+                  const totalQty = goodsItems.reduce((s, i) => s + (i.quantity || 0), 0);
+                  if (!totalQty) return null;
+                  return (
+                    <div className="flex justify-between text-slate-500">
+                      <span>{t('totalQty') || 'Total Qty:'}</span>
+                      <span className="font-semibold">{totalQty % 1 === 0 ? totalQty : totalQty.toFixed(2)}</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Payment Summary */}

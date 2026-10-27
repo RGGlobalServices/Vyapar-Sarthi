@@ -44,6 +44,7 @@ import { formatMillStock } from '@/lib/millStock';
 export default function ProductDetailsSheet({
   productId,
   shopId,
+  initialProduct,
   onClose,
   onEdit,
   onClone,
@@ -56,6 +57,9 @@ export default function ProductDetailsSheet({
    *  right shop instead of silently falling back to whichever one is
    *  globally active. Falls back to the active shop when omitted. */
   shopId?: string;
+  /** Pre-loaded product row from the list — shown immediately so the modal
+   *  header and stat cards are never blank while erp-details loads. */
+  initialProduct?: any;
   onClose: () => void;
   onEdit: (product: any) => void;
   /** Same product, new colour/size: opens the Add form pre-filled from this product. */
@@ -66,7 +70,40 @@ export default function ProductDetailsSheet({
 }) {
   const t = useTranslations('ProductDetails');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [data, setData] = useState<any>(null);
+
+  // Build a displayProduct from the fast list row so the header and stat
+  // cards render immediately, even before erp-details finishes loading.
+  const displayProduct = data?.product ?? (initialProduct ? {
+    name: initialProduct.name,
+    barcode: initialProduct.barcode,
+    sku: initialProduct.sku,
+    category: initialProduct.category,
+    baseUnit: initialProduct.unit,
+    location: initialProduct.location,
+    sellingPrice: initialProduct.sellingPrice,
+    mrp: initialProduct.mrp,
+    costPrice: initialProduct.cost,
+    wholesaleCost: initialProduct.cost,
+    gstPercent: initialProduct.gstPercent,
+    currentStock: initialProduct.stock,
+    gender: initialProduct.gender,
+    shade: initialProduct.shade,
+    metadata: initialProduct.metadata,
+    size_variants: initialProduct.size_variants,
+    millCategory: initialProduct.millCategory,
+    packSize: initialProduct.packSize,
+    packUnit: initialProduct.packUnit,
+    grade: initialProduct.grade,
+    variety: initialProduct.variety,
+    trackBatch: initialProduct.trackBatch,
+    trackExpiry: initialProduct.trackExpiry,
+  } : null);
+  const displayTotalStock = data?.totalStock ?? initialProduct?.stock ?? 0;
+  const displayStockValue = data?.stockValue ?? (initialProduct
+    ? initialProduct.stock * (initialProduct.cost || initialProduct.sellingPrice || 0)
+    : 0);
 
   const { mutate } = useSWRConfig();
 
@@ -104,36 +141,28 @@ export default function ProductDetailsSheet({
 
   const fetchDetails = async () => {
     setLoading(true);
-    // 12-second timeout so the modal never hangs forever when the server is
-    // temporarily unavailable — AbortSignal.timeout() cancels the fetch and
-    // throws an AbortError, which lands in the catch below and shows the
-    // "Failed to load" state instead of spinning indefinitely.
-    const signal = AbortSignal.timeout(12000);
+    setLoadError(false);
+    // 30-second timeout — sequential DB queries on PgBouncer can take up to
+    // ~15s when the pool is busy; 30s gives two retries worth of headroom.
+    const signal = AbortSignal.timeout(30000);
     try {
       const res = await api.get(`/products/${productId}/erp-details`, { ...shopIdHeader(shopId), signal });
       setData(res.data);
     } catch (err: any) {
-      // TimeoutError (AbortSignal.timeout fired) or AbortError (manual abort):
-      // silently let finally run — the "failed to load" state is shown instead.
       const isAbortOrTimeout = err?.name === 'AbortError' || err?.name === 'TimeoutError';
-      if (isAbortOrTimeout) {
-        // expected when server is temporarily unavailable — no console noise
-      } else {
-        // A transient DB-pool blip (connection limit momentarily hit) surfaces
-        // as a 500 — one quick retry usually clears it.
+      if (!isAbortOrTimeout) {
+        // Transient 5xx — one retry after a short pause
         const status = err?.response?.status;
         if (status && status >= 500) {
-          await new Promise(r => setTimeout(r, 1200));
+          await new Promise(r => setTimeout(r, 1500));
           try {
             const res = await api.get(`/products/${productId}/erp-details`, shopIdHeader(shopId));
             setData(res.data);
-          } catch (err2: any) {
-            if (err2?.name !== 'AbortError' && err2?.name !== 'TimeoutError') console.error(err2);
-          }
-        } else {
-          console.error(err);
+            return;
+          } catch { /* fall through to error state */ }
         }
       }
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -168,24 +197,24 @@ export default function ProductDetailsSheet({
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">
-                  {data?.product?.name || (loading ? t('loading') : '—')}
+                  {displayProduct?.name || (loading ? t('loading') : '—')}
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                  <span className="flex items-center gap-0.5"><Tag size={9} />{data?.product?.barcode || data?.product?.sku || t('noSku')}</span>
-                  {data?.product?.category && (
+                  <span className="flex items-center gap-0.5"><Tag size={9} />{displayProduct?.barcode || displayProduct?.sku || t('noSku')}</span>
+                  {displayProduct?.category && (
                     <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-                      {data.product.category}
+                      {displayProduct.category}
                     </span>
                   )}
-                  {data?.product?.baseUnit && (
+                  {displayProduct?.baseUnit && (
                     <span className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] px-1.5 py-0.5 rounded-full border border-violet-200 dark:border-violet-500/20">
-                      {t('unit') || 'Unit'}: {data.product.baseUnit}
+                      {t('unit') || 'Unit'}: {displayProduct.baseUnit}
                     </span>
                   )}
                 </p>
-                {data?.product?.location && (
+                {displayProduct?.location && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
-                    <MapPin size={9} />{data.product.location}
+                    <MapPin size={9} />{displayProduct.location}
                   </p>
                 )}
               </div>
@@ -207,10 +236,10 @@ export default function ProductDetailsSheet({
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors disabled:opacity-40"
               title="Receive Stock"
             >
-              <Package size={12} /> Receive Stock
+              <Package size={12} /> {t('receiveStock')}
             </button>
             <button
-              disabled={loading || !data?.product}
+              disabled={loading && !displayProduct}
               onClick={() => setShowBarcodeModal(true)}
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors disabled:opacity-40"
               title="Barcode / QR"
@@ -230,26 +259,26 @@ export default function ProductDetailsSheet({
             {onNewLot && (
               <button
                 disabled={loading}
-                onClick={() => onNewLot(data?.product)}
+                onClick={() => onNewLot(data?.product ?? displayProduct)}
                 className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/30 rounded-md hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors disabled:opacity-50"
                 title="New lot / stock in"
               >
-                <PackagePlus size={12} /> New lot
+                <PackagePlus size={12} /> {t('newLot')}
               </button>
             )}
             {onClone && (
               <button
                 disabled={loading}
-                onClick={() => onClone(data?.product)}
+                onClick={() => onClone(data?.product ?? displayProduct)}
                 className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-md hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors disabled:opacity-50"
                 title="Clone — same product, new colour/size"
               >
-                <Copy size={12} /> Clone
+                <Copy size={12} /> {t('clone')}
               </button>
             )}
             <button
               disabled={loading}
-              onClick={() => onEdit(data?.product)}
+              onClick={() => onEdit(data?.product ?? displayProduct)}
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
               title={t('edit')}
             >
@@ -286,15 +315,10 @@ export default function ProductDetailsSheet({
 
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-transparent">
-          {loading ? (
+          {!displayProduct ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-500 dark:text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
               <span className="text-sm">{t('loadingDetails')}</span>
-            </div>
-          ) : !data ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400 dark:text-slate-500">
-              <Package size={40} className="text-slate-300 dark:text-slate-700" />
-              <span className="text-sm">{t('failedToLoad')}</span>
             </div>
           ) : (
             <div className="p-5 space-y-5">
@@ -317,16 +341,16 @@ export default function ProductDetailsSheet({
               {(() => {
                 const isUdyog = isWholesaleTierPackage(profile.subscriptionPlan);
                 const isMill = profile.businessType === 'millprocessing';
-                const cost = Number(data.product.costPrice) || Number(data.product.wholesaleCost) || 0;
-                const sp = Number(data.product.sellingPrice) || 0;
-                const mrp = Number(data.product.mrp) || 0;
+                const cost = Number(displayProduct.costPrice) || Number(displayProduct.wholesaleCost) || 0;
+                const sp = Number(displayProduct.sellingPrice) || 0;
+                const mrp = Number(displayProduct.mrp) || 0;
                 // Mills often leave price unset until a Purchase/Sale rate is
                 // agreed — showing "Not Set" instead of ₹0 avoids reading as a
                 // real (and misleading) free/zero price. Scoped to mills only
                 // so every other business type's card keeps today's ₹0 look.
                 const priceOrNotSet = (v: number) => (isMill && v <= 0 ? 'Not Set' : `₹${v.toLocaleString('en-IN')}`);
                 const profitRes = cost > 0 && sp > 0
-                  ? calculateProductProfit(sp, cost, data.product.gstPercent || 0, !!profile.gstInclusiveProfit)
+                  ? calculateProductProfit(sp, cost, displayProduct.gstPercent || 0, !!profile.gstInclusiveProfit)
                   : null;
                 const mrpOffPct = mrp > 0 && sp > 0 && sp < mrp
                   ? Math.round(((mrp - sp) / mrp) * 100 * 10) / 10
@@ -336,13 +360,13 @@ export default function ProductDetailsSheet({
                     <StatCard
                       icon={<Hash size={14} className="text-blue-500 dark:text-blue-400" />}
                       label={t("totalStock")}
-                      value={`${data.totalStock}${data.product.baseUnit ? ' ' + data.product.baseUnit : ''}`}
+                      value={`${displayTotalStock}${displayProduct.baseUnit ? ' ' + displayProduct.baseUnit : ''}`}
                       valueClass="text-blue-600 dark:text-blue-400"
                     />
                     <StatCard
                       icon={<IndianRupee size={14} className="text-emerald-500 dark:text-emerald-400" />}
                       label={t("stockValue")}
-                      value={`₹${data.stockValue.toLocaleString('en-IN')}`}
+                      value={`₹${displayStockValue.toLocaleString('en-IN')}`}
                       valueClass="text-emerald-600 dark:text-emerald-400"
                     />
                     <StatCard
@@ -357,11 +381,19 @@ export default function ProductDetailsSheet({
                       value={priceOrNotSet(sp)}
                       valueClass="text-emerald-600 dark:text-emerald-400"
                     />
+                    {mrp > 0 && (
+                      <StatCard
+                        icon={<IndianRupee size={14} className="text-slate-400 dark:text-slate-500" />}
+                        label={t("mrp") || "MRP"}
+                        value={`₹${mrp.toLocaleString('en-IN')}`}
+                        valueClass="text-slate-700 dark:text-slate-300"
+                      />
+                    )}
                     {isUdyog && (
                       <StatCard
                         icon={<TrendingDown size={14} className="text-slate-500 dark:text-slate-400" />}
                         label={t("wholesaleRate") || "Wholesale Rate"}
-                        value={priceOrNotSet(Number(data.product.wholesaleCost) || 0)}
+                        value={priceOrNotSet(Number(displayProduct.wholesaleCost) || 0)}
                         valueClass="text-slate-900 dark:text-white"
                       />
                     )}
@@ -389,11 +421,11 @@ export default function ProductDetailsSheet({
                   Grade, Variety, Subcategory, Pack Size/Unit, Batch/Expiry
                   overrides); never branches on mill name. */}
               {profile.businessType === 'millprocessing' && (() => {
-                const mc = MILL_CATEGORIES.find(m => m.key === data.product.millCategory);
-                const millStock = formatMillStock(data.product);
+                const mc = MILL_CATEGORIES.find(m => m.key === displayProduct.millCategory);
+                const millStock = formatMillStock(displayProduct);
                 const bizConfig = getBusinessConfig(profile.businessType);
-                const batchOn = data.product.trackBatch ?? bizConfig.hasBatch;
-                const expiryOn = data.product.trackExpiry ?? bizConfig.hasExpiry;
+                const batchOn = displayProduct.trackBatch ?? bizConfig.hasBatch;
+                const expiryOn = displayProduct.trackExpiry ?? bizConfig.hasExpiry;
                 return (
                   <Section
                     icon={<Package size={14} className="text-amber-500 dark:text-amber-400" />}
@@ -401,10 +433,10 @@ export default function ProductDetailsSheet({
                   >
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 text-sm">
                       <DetailField label="Product Type" value={mc ? `${mc.emoji} ${mc.label}` : '-'} />
-                      <DetailField label="Subcategory" value={data.product.subcategory || '-'} />
-                      <DetailField label="Grade" value={data.product.grade || '-'} />
-                      <DetailField label="Variety" value={data.product.variety || '-'} />
-                      <DetailField label="Pack Size" value={data.product.packSize && data.product.packUnit ? `${data.product.packSize} ${data.product.packUnit} / Bag` : '-'} />
+                      <DetailField label="Subcategory" value={displayProduct.subcategory || '-'} />
+                      <DetailField label="Grade" value={displayProduct.grade || '-'} />
+                      <DetailField label="Variety" value={displayProduct.variety || '-'} />
+                      <DetailField label="Pack Size" value={displayProduct.packSize && displayProduct.packUnit ? `${displayProduct.packSize} ${displayProduct.packUnit} / Bag` : '-'} />
                       <DetailField label="Stock" value={[millStock.primary, millStock.secondary, millStock.tertiary].filter(Boolean).join(' · ')} />
                       <DetailField label="Batch Tracking" value={batchOn ? 'On' : 'Off'} />
                       <DetailField label="Expiry Tracking" value={expiryOn ? 'On' : 'Off'} />
@@ -432,12 +464,12 @@ export default function ProductDetailsSheet({
                 // Fall back to parsing size_variants into the same
                 // {color, size, stock, sellingPrice} shape so both schemas
                 // render through the one table below.
-                const nativeVariants = Array.isArray(data.product.variants) ? data.product.variants : [];
+                const nativeVariants = Array.isArray(displayProduct.variants) ? displayProduct.variants : [];
                 // Always parse legacy size_variants — Vyapar/Dukan products store stock there.
                 // Native variants[] may exist but carry 0 stock if they were scaffolded at
                 // product-create time but never updated when stock was added via the legacy form.
-                const legacyMap = parseSizeVariants(data.product.size_variants);
-                const legacyPrices = parseSizePrices(data.product.metadata);
+                const legacyMap = parseSizeVariants(displayProduct.size_variants);
+                const legacyPrices = parseSizePrices(displayProduct.metadata);
                 const legacyVariants = Object.entries(legacyMap).map(([key, qty]) => {
                   const { color, size } = splitVariantKey(key);
                   return { color, size, stock: Number(qty) || 0, sellingPrice: legacyPrices[key]?.sellingPrice };
@@ -508,13 +540,13 @@ export default function ProductDetailsSheet({
                               </tr>
                             );
                           })}
-                          {variantTotal === 0 && (Number(data.totalStock) || 0) > 0 && (
+                          {variantTotal === 0 && (Number(displayTotalStock) || 0) > 0 && (
                             <tr>
                               <td colSpan={4} className="px-3 pb-2 pt-1">
                                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-3 py-2.5">
                                   <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-none" />
                                   <p className="text-xs text-amber-700 dark:text-amber-400 leading-snug">
-                                    <span className="font-semibold">{data.totalStock} {data.product.baseUnit || 'pcs'}</span>{' '}
+                                    <span className="font-semibold">{displayTotalStock} {displayProduct.baseUnit || 'pcs'}</span>{' '}
                                     {t('variantStockUnallocated') || 'stock exists but not allocated to individual variants. Use Stock In to assign per variant.'}
                                   </p>
                                 </div>
@@ -526,8 +558,8 @@ export default function ProductDetailsSheet({
                     </div>
                     <div className="flex justify-between items-center px-4 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs">
                       <span className="text-slate-500">{t("sumOfVariants") || "Sum of variants"}</span>
-                      <span className={cn("font-mono font-bold", variantTotal !== data.totalStock ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300')}>
-                        {variantTotal}{variantTotal !== data.totalStock ? ` (${t('totalShownAbove') || 'total shown above'}: ${data.totalStock})` : ''}
+                      <span className={cn("font-mono font-bold", variantTotal !== displayTotalStock ? 'text-amber-600' : 'text-slate-700 dark:text-slate-300')}>
+                        {variantTotal}{variantTotal !== displayTotalStock ? ` (${t('totalShownAbove') || 'total shown above'}: ${displayTotalStock})` : ''}
                       </span>
                     </div>
                   </Section>
@@ -541,7 +573,26 @@ export default function ProductDetailsSheet({
                   gated to profile.subscriptionPlan === 'wholesale'. It just
                   renders nothing extra for a product that has never been
                   purchased through a batch-generating flow. */}
-              {data.batches.length > 0 && (
+              {/* Loading/retry banner for batches+movements (only shown while erp-details hasn't arrived yet) */}
+              {loading && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs">
+                  <Loader2 size={13} className="animate-spin text-emerald-500 flex-shrink-0" />
+                  {t('loadingDetails')}
+                </div>
+              )}
+              {!loading && loadError && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-xs">
+                  <span className="text-amber-700 dark:text-amber-400">{t('failedToLoad')}</span>
+                  <button
+                    onClick={fetchDetails}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-600 rounded hover:bg-amber-100 dark:hover:bg-amber-800/40 transition-colors"
+                  >
+                    <RefreshCw size={11} /> Retry
+                  </button>
+                </div>
+              )}
+
+              {data?.batches && data.batches.length > 0 && (
               <Section
                 icon={<CheckCircle size={14} className="text-emerald-500 dark:text-emerald-400" />}
                 title={t("activeBatches")}
@@ -620,7 +671,7 @@ export default function ProductDetailsSheet({
               )}
 
               {/* Warehouse / Movements — Udyog + Mill (mill uses Inventory tab, non-mill shows here) */}
-              {isWholesaleTierPackage(profile.subscriptionPlan) && !isMillShop && <>
+              {isWholesaleTierPackage(profile.subscriptionPlan) && !isMillShop && data && <>
               {/* ── Stock by Warehouse ── */}
               <Section
                 icon={<Warehouse size={14} className="text-blue-500 dark:text-blue-400" />}
@@ -710,18 +761,18 @@ export default function ProductDetailsSheet({
             {/* ══════════════════════════════════════════
                 MILL: INVENTORY TAB
                 ══════════════════════════════════════════ */}
-            {isMillShop && activeTab === 'inventory' && (<>
+            {isMillShop && activeTab === 'inventory' && data && (<>
               {/* Stock Summary */}
               <Section icon={<Hash size={14} className="text-blue-500" />} title="Stock Summary">
                 <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-slate-100 dark:divide-slate-700">
                   {[
-                    { label: 'Total Stock', value: `${data.totalStock} ${data.product.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
-                    { label: 'Stock Value', value: `₹${data.stockValue.toLocaleString('en-IN')}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Total Stock', value: `${displayTotalStock} ${displayProduct.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
+                    { label: 'Stock Value', value: `₹${displayStockValue.toLocaleString('en-IN')}`, color: 'text-emerald-600 dark:text-emerald-400' },
                     { label: 'Available', value: data.mill?.fgLots
-                        ? `${data.mill.fgLots.filter((l: any) => l.status === 'AVAILABLE').reduce((s: number, l: any) => s + l.availableQuantity, 0).toFixed(1)} ${data.product.baseUnit || 'Kg'}`
-                        : `${data.totalStock} ${data.product.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                        ? `${data.mill.fgLots.filter((l: any) => l.status === 'AVAILABLE').reduce((s: number, l: any) => s + l.availableQuantity, 0).toFixed(1)} ${displayProduct.baseUnit || 'Kg'}`
+                        : `${displayTotalStock} ${displayProduct.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
                     { label: 'Reserved / Dispatched', value: data.mill?.fgLots
-                        ? `${data.mill.fgLots.filter((l: any) => l.status !== 'AVAILABLE').reduce((s: number, l: any) => s + (l.quantity - l.availableQuantity), 0).toFixed(1)} ${data.product.baseUnit || 'Kg'}`
+                        ? `${data.mill.fgLots.filter((l: any) => l.status !== 'AVAILABLE').reduce((s: number, l: any) => s + (l.quantity - l.availableQuantity), 0).toFixed(1)} ${displayProduct.baseUnit || 'Kg'}`
                         : '—', color: 'text-amber-600 dark:text-amber-400' },
                   ].map(item => (
                     <div key={item.label} className="p-4">
@@ -750,7 +801,7 @@ export default function ProductDetailsSheet({
                           <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{w.name}</td>
                           <td className="px-4 py-3 text-right">
                             <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 px-2 py-0.5 rounded">
-                              {w.quantity} {data.product.baseUnit || 'Kg'}
+                              {w.quantity} {displayProduct.baseUnit || 'Kg'}
                             </span>
                           </td>
                         </tr>
@@ -849,10 +900,10 @@ export default function ProductDetailsSheet({
                           {inputs.length > 0 ? inputs.map((inp: any, i: number) => (
                             <div key={i} className="text-xs text-slate-700 dark:text-slate-300">
                               <p className="font-semibold font-mono">{inp.rawLot?.lotNumber || '—'}</p>
-                              <p className="text-slate-500">{inp.quantityUsed || batch.inputKg || '—'} {data.product.baseUnit || 'Kg'}</p>
+                              <p className="text-slate-500">{inp.quantityUsed || batch.inputKg || '—'} {displayProduct.baseUnit || 'Kg'}</p>
                               {inp.rawLot?.supplier?.name && <p className="text-slate-400 mt-0.5">Supplier: {inp.rawLot.supplier.name}</p>}
                             </div>
-                          )) : <p className="text-xs text-slate-400">{batch.inputKg ? `${batch.inputKg} ${data.product.baseUnit || 'Kg'}` : '—'}</p>}
+                          )) : <p className="text-xs text-slate-400">{batch.inputKg ? `${batch.inputKg} ${displayProduct.baseUnit || 'Kg'}` : '—'}</p>}
                         </div>
                         <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 rounded-lg p-3">
                           <p className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 tracking-wider mb-2 flex items-center gap-1"><ArrowUpCircle size={11} /> Output</p>
@@ -899,16 +950,16 @@ export default function ProductDetailsSheet({
                 const totalProduced = lots.reduce((s, l) => s + l.quantity, 0);
                 const totalAvail = lots.reduce((s, l) => s + l.availableQuantity, 0);
                 const dispatched = totalProduced - totalAvail;
-                const packSize = data.product.packSize;
-                const packUnit = data.product.packUnit;
+                const packSize = displayProduct.packSize;
+                const packUnit = displayProduct.packUnit;
                 const totalBags = packSize ? Math.floor(totalProduced / packSize) : null;
                 return (
                   <Section icon={<Boxes size={14} className="text-purple-500" />} title="Packing Summary">
                     <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-slate-100 dark:divide-slate-700">
                       {[
-                        { label: 'Total Produced', value: `${totalProduced.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
-                        { label: 'Dispatched', value: `${dispatched.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-slate-700 dark:text-slate-300' },
-                        { label: 'Available to Pack / Dispatch', value: `${totalAvail.toFixed(1)} ${data.product.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
+                        { label: 'Total Produced', value: `${totalProduced.toFixed(1)} ${displayProduct.baseUnit || 'Kg'}`, color: 'text-blue-600 dark:text-blue-400' },
+                        { label: 'Dispatched', value: `${dispatched.toFixed(1)} ${displayProduct.baseUnit || 'Kg'}`, color: 'text-slate-700 dark:text-slate-300' },
+                        { label: 'Available to Pack / Dispatch', value: `${totalAvail.toFixed(1)} ${displayProduct.baseUnit || 'Kg'}`, color: 'text-emerald-600 dark:text-emerald-400' },
                         { label: packSize ? `Total Bags (${packSize} ${packUnit}/bag)` : 'Pack Size', value: totalBags != null ? `${totalBags} bags` : packSize ? `${packSize} ${packUnit}` : 'Not set', color: 'text-amber-600 dark:text-amber-400' },
                       ].map(item => (
                         <div key={item.label} className="p-4">
@@ -926,7 +977,7 @@ export default function ProductDetailsSheet({
                 <Section icon={<Layers size={14} className="text-indigo-500" />} title="Lot-wise Packing Detail">
                   <div className="divide-y divide-slate-100 dark:divide-slate-800">
                     {(data.mill.fgLots as any[]).map((lot: any) => {
-                      const packSize = data.product.packSize;
+                      const packSize = displayProduct.packSize;
                       const bags = packSize ? Math.floor(lot.quantity / packSize) : null;
                       const dispatchedQty = lot.quantity - lot.availableQuantity;
                       return (
@@ -958,7 +1009,7 @@ export default function ProductDetailsSheet({
                           </div>
                           {bags != null && (
                             <p className="text-[11px] text-slate-400 mt-2 flex items-center gap-1">
-                              <Boxes size={11} /> {bags} bags × {data.product.packSize} {data.product.packUnit || 'Kg'}/bag
+                              <Boxes size={11} /> {bags} bags × {displayProduct.packSize} {displayProduct.packUnit || 'Kg'}/bag
                             </p>
                           )}
                           {lot.godown && (
@@ -998,8 +1049,8 @@ export default function ProductDetailsSheet({
             {/* ══════════════════════════════════════════
                 MILL: TRACEABILITY TAB
                 ══════════════════════════════════════════ */}
-            {isMillShop && activeTab === 'traceability' && (
-              <MillTraceabilityTab data={data} product={data.product} />
+            {isMillShop && activeTab === 'traceability' && data && (
+              <MillTraceabilityTab data={data} product={data.product ?? displayProduct} />
             )}
 
             </div>
@@ -1007,9 +1058,9 @@ export default function ProductDetailsSheet({
         </div>
       </div>
 
-      {showReceive && data?.product && (
+      {showReceive && displayProduct && (
         <ReceiveDrawer
-          product={data.product}
+          product={data?.product ?? displayProduct}
           godowns={godowns}
           onClose={() => setShowReceive(false)}
           onSuccess={() => {
@@ -1025,11 +1076,11 @@ export default function ProductDetailsSheet({
         onConfirm={() => { setConfirmDelete(false); onDelete?.(productId); }}
         onCancel={() => setConfirmDelete(false)}
       />
-      {showBarcodeModal && data?.product && (
+      {showBarcodeModal && displayProduct && (
         <BarcodeQRModal
           product={{
-            ...data.product,
-            stock: data.product.currentStock ?? data.product.stock,
+            ...(data?.product ?? displayProduct),
+            stock: (data?.product ?? displayProduct).currentStock ?? (data?.product ?? displayProduct).stock,
           }}
           isWholesale
           onClose={() => setShowBarcodeModal(false)}

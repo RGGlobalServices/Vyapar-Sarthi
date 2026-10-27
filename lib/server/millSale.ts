@@ -362,6 +362,28 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
             WHERE id = ${fgLotId}::uuid AND shop_id = ${shopId}::uuid`;
         }
 
+        // (f3) Auto-FIFO lot deduction for mill items billed without an explicit fg_lot_id
+        // (happens when the shopkeeper picks the product by total-pool rather than a specific lot)
+        for (const p of parsed) {
+          const fgLotId = p.raw.fg_lot_id || p.raw.fgLotId || null;
+          if (fgLotId || !p.pid || p.qty <= 0) continue;
+          let remaining = p.qty;
+          const fifoLots = await tx.finishedGoodsLot.findMany({
+            where: { shopId, productId: p.pid, status: 'AVAILABLE', availableQuantity: { gt: 0.005 } },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, availableQuantity: true },
+          });
+          for (const lot of fifoLots) {
+            if (remaining <= 0.005) break;
+            const draw = Math.min(remaining, Number(lot.availableQuantity));
+            await tx.$executeRaw`
+              UPDATE finished_goods_lots
+              SET available_quantity = GREATEST(0, available_quantity - ${draw})
+              WHERE id = ${lot.id}::uuid AND shop_id = ${shopId}::uuid`;
+            remaining -= draw;
+          }
+        }
+
         // (g) customer udhar + credit limit, cash book
         if (outstandingPaise > 0 && finalCustomerId) {
           const cust = await tx.customer.findFirst({ where: { id: finalCustomerId, shopId } });

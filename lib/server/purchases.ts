@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 export class PurchaseReversalBlockedError extends Error {
   constructor(message: string) {
@@ -82,29 +83,39 @@ export async function reversePurchaseInvoiceEffects(
       }
     }
 
-    // Reverse warehouse inventory (clamped at 0 defensively — a transfer out
-    // of this specific warehouse after the purchase, while the product total
-    // above still checks out, could otherwise take one godown negative).
-    // Looked up concurrently, then applied concurrently, to pipeline the
-    // round-trips instead of paying full network latency per item in series.
+    // Reverse warehouse inventory — single bulk UPDATE instead of N findUnique + N update.
+    // GREATEST(0, ...) prevents a godown quantity going negative when stock was
+    // transferred out of this warehouse after the purchase.
     const relevant = movements.filter(m => m.warehouseId);
-    const godownRows = await Promise.all(relevant.map(m =>
-      tx.godownProduct.findUnique({
-        where: { godownId_productId: { godownId: m.warehouseId as string, productId: m.productId } },
-      })
-    ));
-    await Promise.all(relevant.map((m, i) => {
-      const gp = godownRows[i];
-      if (!gp) return null;
-      return tx.godownProduct.update({ where: { id: gp.id }, data: { quantity: Math.max(0, gp.quantity - m.quantity) } });
-    }).filter(Boolean));
+    if (relevant.length > 0) {
+      const godownValues = relevant.map(m =>
+        Prisma.sql`(${m.warehouseId}::uuid, ${m.productId}::uuid, ${m.quantity}::numeric)`
+      );
+      await tx.$executeRaw`
+        UPDATE godown_products
+        SET quantity = GREATEST(0, godown_products.quantity - v.qty)
+        FROM (VALUES ${Prisma.join(godownValues)}) AS v(godown_id, product_id, qty)
+        WHERE godown_products.godown_id = v.godown_id
+          AND godown_products.product_id = v.product_id
+      `;
+    }
 
-    await Promise.all([
-      ...[...qtyByProduct.entries()].map(([productId, qty]) =>
-        tx.product.update({ where: { id: productId }, data: { currentStock: { decrement: qty } } })
-      ),
-      movements.length ? tx.stockMovement.deleteMany({ where: { id: { in: movements.map(m => m.id) } } }) : null,
-    ].filter(Boolean));
+    // Single bulk UPDATE for product stock reversal instead of one update per unique product.
+    if (qtyByProduct.size > 0) {
+      const stockValues = [...qtyByProduct.entries()].map(([productId, qty]) =>
+        Prisma.sql`(${productId}::uuid, ${qty}::numeric)`
+      );
+      await tx.$executeRaw`
+        UPDATE products
+        SET current_stock = COALESCE(current_stock, 0) - v.qty
+        FROM (VALUES ${Prisma.join(stockValues)}) AS v(product_id, qty)
+        WHERE id = v.product_id AND shop_id = ${shopId}::uuid
+      `;
+    }
+
+    if (movements.length) {
+      await tx.stockMovement.deleteMany({ where: { id: { in: movements.map(m => m.id) } } });
+    }
   }
 
   const cashEntries = await tx.cashBook.findMany({

@@ -37,7 +37,7 @@ import VariantCleanupModal from '@/components/products/VariantCleanupModal';
 import BulkVariantAddModal from '@/components/products/BulkVariantAddModal';
 import dynamic from 'next/dynamic';
 import WholesaleProductsUI from './WholesaleProductsUI';
-import ProductDetailsSheet from './ProductDetailsSheet';
+const ProductDetailsSheet = dynamic(() => import('./ProductDetailsSheet'), { ssr: false });
 import useSWR from 'swr';
 
 import { fetchProductsMapped, mapApiProductToRow } from '@/lib/fetchers';
@@ -315,6 +315,55 @@ function LegacyProductsUI() {
     enabled: !showAddModal && !showEditModal && !showScanner,
     onScan: (code) => { setSearch(code); playScanBeep(true); },
   });
+  // Spreadsheet-style inline cell editing
+  type CellEdit = { productId: string | number; field: 'minStock' | 'mrp' | 'sellingPrice' | 'location'; value: string };
+  const [cellEdit, setCellEdit] = useState<CellEdit | null>(null);
+
+  async function inlineSave(edit: CellEdit) {
+    const numericFields = ['minStock', 'mrp', 'sellingPrice'] as const;
+    const isNumeric = (numericFields as readonly string[]).includes(edit.field);
+    const parsed = isNumeric ? Number(edit.value) : edit.value;
+    if (isNumeric && !Number.isFinite(parsed as number)) { setCellEdit(null); return; }
+    setCellEdit(null);
+    // Optimistic update — row reflects new value immediately before the server round-trip.
+    mutateProducts(
+      prev => prev ? prev.map(p => p.id === edit.productId ? { ...p, [edit.field]: parsed } : p) : prev,
+      { revalidate: false }
+    );
+    try {
+      await api.patch(`/products/${edit.productId}`, { [edit.field]: parsed });
+      invalidateProductCaches();
+    } catch {
+      toast.error('Failed to save');
+      // Roll back — re-fetch to restore the real value.
+      mutateProducts();
+    }
+  }
+
+  function startCellEdit(productId: string | number, field: CellEdit['field'], currentValue: string | number) {
+    setCellEdit({ productId, field, value: String(currentValue ?? '') });
+  }
+
+  const CELL_FIELD_ORDER: CellEdit['field'][] = ['minStock', 'mrp', 'sellingPrice', 'location'];
+
+  function cellKeyDown(e: React.KeyboardEvent<HTMLInputElement>, edit: CellEdit, product: Product) {
+    if (e.key === 'Escape') { setCellEdit(null); return; }
+    if (e.key === 'Enter') { inlineSave(edit); return; }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      inlineSave(edit);
+      const idx = CELL_FIELD_ORDER.indexOf(edit.field);
+      const nextField = CELL_FIELD_ORDER[idx + (e.shiftKey ? -1 : 1)];
+      if (nextField) {
+        const val = nextField === 'minStock' ? product.minStock
+          : nextField === 'mrp' ? product.mrp
+          : nextField === 'sellingPrice' ? product.sellingPrice
+          : product.location ?? '';
+        setTimeout(() => startCellEdit(product.id, nextField, val), 0);
+      }
+    }
+  }
+
   const filterRef = useRef<HTMLDivElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -1179,8 +1228,12 @@ function LegacyProductsUI() {
       const target = effectiveProducts.find(p => p.id === id);
       await api.delete(`/products/${id}`, shopIdHeader(target?.shopId));
       invalidateProductCaches();
-      toast.success('Product deleted');
+      // Close the details sheet if it was showing the deleted product, and
+      // remove the row from the optimistic list so it disappears immediately.
+      setSelectedProduct(null);
       setDeleteConfirmId(null);
+      mutateProducts(prev => prev ? prev.filter(p => p.id !== id) : prev, { revalidate: false });
+      toast.success('Product deleted');
     } catch (err: any) {
       // Silent catch previously — a blocked delete (e.g. product referenced
       // elsewhere) closed nothing and showed nothing, so the shopkeeper had
@@ -1937,6 +1990,9 @@ function LegacyProductsUI() {
                   {groupBizConfig.hasLiquorSpecs && <th className="px-3 py-2.5">{t('colBrandAbv')}</th>}
                   <th className="px-3 py-2.5 text-right">{t('colMRP')}</th>
                   <th className="px-3 py-2.5 text-right">{t('colSelling')}</th>
+                  {groupBizConfig.type !== 'millprocessing' && (
+                    <th className="px-3 py-2.5 text-right">{t('colCostUnit')}</th>
+                  )}
                   <th className="px-3 py-2.5 text-right">{t('colStockValue')}</th>
                   <th className="px-3 py-2.5 text-right">{t('colProfit')}</th>
                   <th className="px-3 py-2.5 text-right" title="Discount from MRP: (MRP − Selling Price) ÷ MRP">{t('colDisc')}</th>
@@ -2062,7 +2118,11 @@ function LegacyProductsUI() {
                           {isLowStock && <AlertCircle size={13} className="text-orange-400" />}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{product.minStock}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400" onClick={e => { e.stopPropagation(); startCellEdit(product.id, 'minStock', product.minStock); }}>
+                        {cellEdit?.productId === product.id && cellEdit.field === 'minStock'
+                          ? <input autoFocus type="number" min="0" className="w-16 px-1 py-0.5 text-sm border border-emerald-400 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400" value={cellEdit.value} onChange={e => setCellEdit(c => c && ({ ...c, value: e.target.value }))} onBlur={() => inlineSave(cellEdit)} onKeyDown={e => cellKeyDown(e, cellEdit, product)} onClick={e => e.stopPropagation()} />
+                          : <span className="cursor-text hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-dashed">{product.minStock}</span>}
+                      </td>
                       {groupBizConfig.hasExpiry && <td className="px-3 py-2"><ExpiryBadge date={product.expiry_date} /></td>}
                       {groupBizConfig.hasBatch && <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400">{product.batch_number || '—'}</td>}
                       {groupBizConfig.hasModel && <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300 font-mono">{product.model_number || '—'}</td>}
@@ -2083,20 +2143,42 @@ function LegacyProductsUI() {
                           {(product.metadata as any)?.alcoholPercentage && <span className="ml-1 text-rose-500 dark:text-rose-400 font-semibold">· {(product.metadata as any).alcoholPercentage}%</span>}
                         </td>
                       )}
-                      <td className="px-3 py-2 text-right text-slate-500 dark:text-slate-400">
+                      <td className="px-3 py-2 text-right text-slate-500 dark:text-slate-400" onClick={e => { if (!hasPerSizePricing) { e.stopPropagation(); startCellEdit(product.id, 'mrp', product.mrp); } }}>
                         {hasPerSizePricing
                           ? (mrpRange
                               ? <span className="text-[11px] font-semibold text-violet-600 dark:text-violet-400" title="MRP range across variants">{mrpRange}</span>
                               : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size</span>)
-                          : `₹${product.mrp?.toLocaleString('en-IN') ?? '—'}`}
+                          : cellEdit?.productId === product.id && cellEdit.field === 'mrp'
+                            ? <input autoFocus type="number" min="0" className="w-20 px-1 py-0.5 text-sm border border-emerald-400 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 text-right" value={cellEdit.value} onChange={e => setCellEdit(c => c && ({ ...c, value: e.target.value }))} onBlur={() => inlineSave(cellEdit)} onKeyDown={e => cellKeyDown(e, cellEdit, product)} onClick={e => e.stopPropagation()} />
+                            : <span className="cursor-text hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-dashed">₹{product.mrp?.toLocaleString('en-IN') ?? '—'}</span>}
                       </td>
-                      <td className="px-3 py-2 text-right font-bold">
+                      <td className="px-3 py-2 text-right font-bold" onClick={e => { if (!hasPerSizePricing) { e.stopPropagation(); startCellEdit(product.id, 'sellingPrice', product.sellingPrice); } }}>
                         {hasPerSizePricing
                           ? (sellingRange
                               ? <span className="text-[11px] text-violet-600 dark:text-violet-400" title="Selling price range across variants">{sellingRange}</span>
                               : <span className="text-[10px] font-semibold text-violet-500 dark:text-violet-400 italic">Per-size ↕</span>)
-                          : `₹${product.sellingPrice?.toLocaleString('en-IN') ?? '—'}`}
+                          : cellEdit?.productId === product.id && cellEdit.field === 'sellingPrice'
+                            ? <input autoFocus type="number" min="0" className="w-20 px-1 py-0.5 text-sm border border-emerald-400 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 text-right" value={cellEdit.value} onChange={e => setCellEdit(c => c && ({ ...c, value: e.target.value }))} onBlur={() => inlineSave(cellEdit)} onKeyDown={e => cellKeyDown(e, cellEdit, product)} onClick={e => e.stopPropagation()} />
+                            : <span className="cursor-text hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-dashed">₹{product.sellingPrice?.toLocaleString('en-IN') ?? '—'}</span>}
                       </td>
+                      {groupBizConfig.type !== 'millprocessing' && (
+                        <td className="px-3 py-2 text-right">
+                          {product.cost > 0 ? (
+                            <>
+                              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                                ₹{product.cost.toLocaleString('en-IN')}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 dark:text-slate-500 font-normal">
+                                /{product.unit || 'pc'}
+                              </span>
+                            </>
+                          ) : (
+                            <button onClick={e => { e.stopPropagation(); startEdit(product); }} className="text-[10px] text-slate-400 dark:text-slate-500 hover:text-amber-500 dark:hover:text-amber-400 underline transition-colors">
+                              set cost
+                            </button>
+                          )}
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-right font-semibold">
                         <span className={hasCost ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500'}>
                           {hasCost ? '' : '~'}₹{stockValue.toLocaleString('en-IN')}
@@ -2119,7 +2201,11 @@ function LegacyProductsUI() {
                           return <span className="text-blue-600 dark:text-blue-400 font-semibold" title={`MRP ₹${mrp} − SP ₹${sp}`}>{pct.toFixed(1)}%</span>;
                         })()}
                       </td>
-                      <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{product.location || '—'}</td>
+                      <td className="px-3 py-2 text-slate-500 dark:text-slate-400" onClick={e => { e.stopPropagation(); startCellEdit(product.id, 'location', product.location ?? ''); }}>
+                        {cellEdit?.productId === product.id && cellEdit.field === 'location'
+                          ? <input autoFocus type="text" placeholder="e.g. Rack A3" className="w-24 px-1 py-0.5 text-sm border border-emerald-400 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400" value={cellEdit.value} onChange={e => setCellEdit(c => c && ({ ...c, value: e.target.value }))} onBlur={() => inlineSave(cellEdit)} onKeyDown={e => cellKeyDown(e, cellEdit, product)} onClick={e => e.stopPropagation()} />
+                          : <span className="cursor-text hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-dashed">{product.location || '—'}</span>}
+                      </td>
                       <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity">
                           <button onClick={() => setQrProduct(product)} title={t('barcodeQrTitle')}
@@ -3299,6 +3385,7 @@ function LegacyProductsUI() {
         <ProductDetailsSheet
           productId={String(selectedProduct.id)}
           shopId={selectedProduct.shopId}
+          initialProduct={selectedProduct}
           onClose={() => setSelectedProduct(null)}
           onNewLot={() => { const row = selectedProduct; setSelectedProduct(null); setNewLotProduct(row); }}
           onClone={() => { const row = selectedProduct; setSelectedProduct(null); startClone(row); }}

@@ -1583,6 +1583,11 @@
     "changeLot": "Change Lot",
     "lotPickerHint": "Oldest lot is recommended — sell it first so older stock doesn't sit. Profit is calculated from each lot's purchase cost.",
     "exceedsAvailable": "Exceeds available ({available} {unit})",
+    "billFromPool": "Bill from Total Pool",
+    "totalAvailable": "{qty} {unit} total",
+    "lotsReady": "{n} lot ready",
+    "lotsReadyPlural": "{n} lots ready",
+    "enterQtyToSell": "Enter qty to sell (kg)",
     "barcode": "Barcode",
     "barcodeHintRegisters": "registers this as a real product",
     "barcodeHintOptional": "optional — leave blank for a one-off cart item",
@@ -1609,6 +1614,7 @@
     "mrp": "MRP:",
     "offerSavings": "Offer Savings:",
     "discount": "Discount:",
+    "totalQty": "Total Qty:",
     "total": "TOTAL",
     "emiDetails": "── EMI DETAILS ──",
     "downPayment": "Down Payment:",
@@ -3329,7 +3335,10 @@
     "printBarcodeLabels": "Print Barcode Labels ({n})",
     "startAnotherImport": "Start Another Import",
     "cancelConfirm": "Are you sure you want to cancel?\n\nThe scanned data ({n} rows) will be lost and you'll need to scan the file again.",
-    "loadingModule": "Loading..."
+    "loadingModule": "Loading...",
+    "destinationCol": "Destination",
+    "destMill": "Mill Stock",
+    "destDirectSale": "Direct to Sale"
   },
   "Variants": {
     "grandTotal": "Grand Total",
@@ -3673,6 +3682,8 @@
     "purchaseDate": "Purchase Date",
     "itemsLabel": "Items",
     "productLabel": "Product",
+    "addNewProduct": "Add New Product",
+    "enterProductName": "Enter product name...",
     "qty": "Qty",
     "unitCost": "Unit Cost",
     "batchOptional": "Batch (Opt)",
@@ -3969,7 +3980,13 @@
     "recentMovements": "Recent Movements",
     "noRecentMovements": "No recent movements",
     "delete": "Delete",
-    "confirmDelete": "Are you sure you want to delete this product?"
+    "confirmDelete": "Are you sure you want to delete this product?",
+    "mrp": "MRP",
+    "receiveStock": "Receive Stock",
+    "newLot": "New Lot",
+    "clone": "Clone",
+    "mlWiseStock": "ML-wise Stock",
+    "typeLabel": "Type"
   },
   "AlertDetails": {
     "loading": "Loading alert details…",

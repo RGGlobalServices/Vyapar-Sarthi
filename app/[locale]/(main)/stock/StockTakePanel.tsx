@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
 import { useBusinessStore } from '@/lib/businessStore';
 import { cn } from '@/lib/utils';
+import { variantLabel } from '@/lib/variants';
 
 const fetcher = (u: string) => api.get(u).then((r) => r.data);
 
@@ -20,6 +21,7 @@ type Session = {
 type Item = {
   id: string; productId: string; productName: string; unit: string | null;
   systemQty: number; countedQty: number | null;
+  variantKey?: string | null;
 };
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -158,7 +160,7 @@ function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => v
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return items;
-    return items.filter((i) => i.productName.toLowerCase().includes(needle));
+    return items.filter((i) => i.productName.toLowerCase().includes(needle) || (i.variantKey || '').toLowerCase().includes(needle));
   }, [items, search]);
 
   const countedCount = items.filter((i) => i.countedQty !== null).length;
@@ -256,7 +258,11 @@ function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => v
                 const diff = item.countedQty !== null ? item.countedQty - item.systemQty : null;
                 return (
                   <tr key={item.id} className={cn('hover:bg-slate-50 dark:hover:bg-slate-800/30', diff !== null && diff !== 0 && 'bg-amber-50/50 dark:bg-amber-500/5')}>
-                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">{item.productName}<span className="text-slate-400 font-normal ml-1">({item.unit})</span></td>
+                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">
+                      {item.productName}
+                      {item.variantKey && <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1.5">({variantLabel(item.variantKey)})</span>}
+                      <span className="text-slate-400 font-normal ml-1">({item.unit})</span>
+                    </td>
                     <td className="px-4 py-3 text-right text-slate-500">{item.systemQty}</td>
                     <td className="px-4 py-3 text-right">
                       {isDraft ? (

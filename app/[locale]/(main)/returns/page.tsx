@@ -157,16 +157,28 @@ export default function ReturnsPage() {
   function addExchangeLine() {
     if (!pickedProduct) return;
     const variantOpt = pickedProduct.variants.find(v => v.key === pickedVariant) || null;
-    const line: ExchangeLine = {
-      key: `${pickedProduct.id}-${pickedVariant || 'plain'}-${Date.now()}`,
-      productId: pickedProduct.id,
-      name: pickedProduct.name,
-      variant: pickedVariant || null,
-      qty: 1,
-      price: variantOpt?.price ?? pickedProduct.price,
-      maxStock: variantOpt ? variantOpt.stock : pickedProduct.currentStock,
-    };
-    setExchangeLines(prev => [...prev, line]);
+    const variantKey = pickedVariant || null;
+
+    // If same product + variant already in list, increment qty instead of adding duplicate.
+    const existing = exchangeLines.find(
+      l => l.productId === pickedProduct.id && l.variant === variantKey
+    );
+    if (existing) {
+      setExchangeLines(prev => prev.map(l =>
+        l.key === existing.key ? { ...l, qty: l.qty + 1 } : l
+      ));
+    } else {
+      const line: ExchangeLine = {
+        key: `${pickedProduct.id}-${pickedVariant || 'plain'}-${Date.now()}`,
+        productId: pickedProduct.id,
+        name: pickedProduct.name,
+        variant: variantKey,
+        qty: 1,
+        price: variantOpt?.price ?? pickedProduct.price,
+        maxStock: variantOpt ? variantOpt.stock : pickedProduct.currentStock,
+      };
+      setExchangeLines(prev => [...prev, line]);
+    }
     setPickedProduct(null);
     setPickedVariant('');
     setProductSearch('');
@@ -745,13 +757,26 @@ export default function ReturnsPage() {
                               <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{line.name}</p>
                               {line.variant && <p className="text-[10px] text-indigo-500 font-bold">{line.variant}</p>}
                             </div>
-                            <div className="flex items-center gap-2 ml-auto">
-                              <input
-                                type="number" min={1}
-                                value={line.qty}
-                                onChange={e => updateExchangeLine(line.key, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
-                                className="w-14 text-center text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 text-slate-900 dark:text-slate-100"
-                              />
+                            <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+                              {/* Qty with +/- buttons */}
+                              <div className="flex items-center">
+                                <button type="button"
+                                  onClick={() => updateExchangeLine(line.key, { qty: Math.max(1, line.qty - 1) })}
+                                  className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-700 rounded-l border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold text-base hover:bg-slate-200 dark:hover:bg-slate-600">
+                                  −
+                                </button>
+                                <input
+                                  type="number" min={1}
+                                  value={line.qty}
+                                  onChange={e => updateExchangeLine(line.key, { qty: Math.max(1, parseInt(e.target.value) || 1) })}
+                                  className="w-10 text-center text-sm bg-slate-50 dark:bg-slate-800 border-t border-b border-slate-300 dark:border-slate-600 py-1 text-slate-900 dark:text-slate-100"
+                                />
+                                <button type="button"
+                                  onClick={() => updateExchangeLine(line.key, { qty: line.qty + 1 })}
+                                  className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-700 rounded-r border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-bold text-base hover:bg-slate-200 dark:hover:bg-slate-600">
+                                  +
+                                </button>
+                              </div>
                               <input
                                 type="number" min={0}
                                 value={line.price}

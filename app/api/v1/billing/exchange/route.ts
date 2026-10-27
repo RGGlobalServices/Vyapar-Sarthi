@@ -413,6 +413,10 @@ export const POST = handle(async (req) => {
     let cashRefunded = 0;
     let udharAdded = 0;
     let cashCollected = 0;
+    // How much of the original bill's outstanding the trade-in credit resolves.
+    // Non-zero only when returnValue > amountPaid (trade-in exceeds cash collected).
+    // For difference < 0, splitRefund already handles outstanding clearance via udharCleared.
+    let originalOutstandingDelta = 0;
 
     if (difference < 0) {
       const excess = -difference;
@@ -422,12 +426,18 @@ export const POST = handle(async (req) => {
       const split = splitRefund(excess, outstandingOnThisBill, lockedCustomer ? Number(lockedCustomer.total_due) || 0 : null);
       udharCleared = split.udharCleared;
       cashRefunded = split.cashRefunded;
-    } else if (difference > 0 && settlement_method === 'Udhar') {
-      udharAdded = difference;
-    } else if (difference > 0 && mix_payment) {
-      cashCollected = Number(mix_payment.cash) || 0;
-    } else if (difference > 0) {
-      cashCollected = settlement_method === 'Cash' ? difference : 0;
+    } else {
+      // difference >= 0: trade-in covers full return value, so the original bill's
+      // outstanding (if any) is now orphaned — compute the delta to clean it up.
+      const paidBefore = Number(saleRow.amount_paid) || 0;
+      originalOutstandingDelta = Math.max(0, returnValue - paidBefore);
+      if (difference > 0 && settlement_method === 'Udhar') {
+        udharAdded = difference;
+      } else if (difference > 0 && mix_payment) {
+        cashCollected = Number(mix_payment.cash) || 0;
+      } else if (difference > 0) {
+        cashCollected = settlement_method === 'Cash' ? difference : 0;
+      }
     }
 
     await tx.sale.update({
@@ -435,11 +445,38 @@ export const POST = handle(async (req) => {
       data: {
         totalAmount: { decrement: returnValue },
         totalProfit: { decrement: totalProfitRefunded },
-        ...(cashRefunded > 0 ? { amountPaid: { decrement: Math.min(cashRefunded, Number(saleRow.amount_paid) || 0) } } : {}),
+        // Always remove the trade-in credit from the original sale's amountPaid.
+        // Without this, exchange invoices with amountPaid=exchangeValue cause double-counting
+        // in salesCollection (original.amountPaid + exchange.amountPaid counts returnValue twice).
+        amountPaid: { decrement: Math.min(returnValue, Number(saleRow.amount_paid) || 0) },
       },
     });
 
     // 6. Net settlement — udhar side
+
+    // 6a. Clear original bill's orphaned outstanding (difference >= 0 path only).
+    // When the trade-in credit exceeds what was originally collected, the original bill
+    // leaves behind phantom udhar that is no longer backed by any active outstanding.
+    if (originalOutstandingDelta > 0 && saleRow.customer_id && lockedCustomer) {
+      const safeDec = Math.min(originalOutstandingDelta, Math.max(0, Number(lockedCustomer.total_due) || 0));
+      if (safeDec > 0) {
+        await tx.$executeRaw`
+          UPDATE customers SET total_due = COALESCE(total_due, 0) - ${safeDec}
+          WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+        `;
+        await tx.customer_transactions.create({
+          data: {
+            customer_id: saleRow.customer_id,
+            type: 'refund',
+            amount: safeDec,
+            note: `Exchange: outstanding cleared for ${saleRow.invoice_number}`,
+            bill_number: saleRow.invoice_number,
+            created_at: new Date(),
+          },
+        });
+      }
+    }
+
     if (saleRow.customer_id && udharCleared > 0) {
       const dec = await tx.$executeRaw`
         UPDATE customers SET total_due = COALESCE(total_due, 0) - ${udharCleared}
@@ -460,7 +497,9 @@ export const POST = handle(async (req) => {
     }
     if (saleRow.customer_id && udharAdded > 0) {
       if (lockedCustomer && (lockedCustomer.credit_limit ?? 0) > 0) {
-        const curDue = Number(lockedCustomer.total_due || 0);
+        // Use totalDue after outstanding clearing so the credit limit check reflects
+        // the post-exchange balance rather than the pre-exchange snapshot.
+        const curDue = Math.max(0, (Number(lockedCustomer.total_due || 0)) - originalOutstandingDelta);
         if (curDue + udharAdded > lockedCustomer.credit_limit!) {
           throw new ApiError(400, `Credit Limit of ₹${lockedCustomer.credit_limit} exceeded by ₹${(curDue + udharAdded) - lockedCustomer.credit_limit!}`);
         }

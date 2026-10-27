@@ -3,8 +3,13 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Package, FileSpreadsheet, ShoppingCart, Users, Truck, BookOpen, Calculator, Sparkles, UploadCloud, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import ImportWizard from './ImportWizard';
+import dynamic from 'next/dynamic';
 import api from '@/lib/api';
+
+const ImportWizard = dynamic(() => import('./ImportWizard'), {
+  loading: () => <div className="flex items-center justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-emerald-500" /></div>,
+  ssr: false,
+});
 import { useBusinessStore } from '@/lib/businessStore';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 

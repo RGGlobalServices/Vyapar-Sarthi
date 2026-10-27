@@ -1,5 +1,3 @@
-'use client';
-
 export default function NotFoundPage() {
   return (
     <div suppressHydrationWarning className="flex flex-col items-center justify-center min-h-[50vh] text-slate-200">

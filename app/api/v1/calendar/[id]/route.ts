@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { invalidateCalendarCache } from '@/lib/server/calendarCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,7 @@ export const PATCH = handle<Ctx>(async (req, { params }) => {
   if (b.notified !== undefined) data.notified = !!b.notified;
 
   const event = await prisma.calendarEvent.update({ where: { id }, data });
+  invalidateCalendarCache(shop.id);
   return json(event);
 });
 
@@ -41,5 +43,6 @@ export const DELETE = handle<Ctx>(async (req, { params }) => {
   const existing = await prisma.calendarEvent.findFirst({ where: { id, shopId: shop.id } });
   if (!existing) throw new ApiError(404, 'Event not found');
   await prisma.calendarEvent.delete({ where: { id } });
+  invalidateCalendarCache(shop.id);
   return json({ detail: 'Event deleted' });
 });

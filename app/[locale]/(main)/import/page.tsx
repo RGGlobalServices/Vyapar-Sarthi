@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useBusinessStore } from '@/lib/businessStore';
 import { useLocale } from 'next-intl';
@@ -12,21 +12,16 @@ export default function ImportPageWrapper() {
   const { profile, fetchProfile } = useBusinessStore();
   const locale = useLocale();
 
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
     fetchProfile();
   }, [fetchProfile]);
 
   useEffect(() => {
-    if (mounted && profile && isSubscriptionEnded(profile)) {
+    if (profile && isSubscriptionEnded(profile)) {
       window.location.href = `/${locale}/billing`;
     }
-  }, [profile, locale, mounted]);
+  }, [profile, locale]);
 
-  // `mounted` intentionally dropped from the gate — it was the "full refresh
-  // on nav" trigger. Only wait when the profile itself isn't hydrated yet.
   if (!profile || !profile.subscriptionPlan) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">

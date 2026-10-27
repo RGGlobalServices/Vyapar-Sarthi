@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
     // `existingPolicy` is the global default the preview picked: 'skip' means
     // "only import new records" unless a row is individually flipped to update.
     const rowDecisions: (string | undefined)[] = Array.isArray(body.rowDecisions) ? body.rowDecisions : [];
+    const rowDestinations: (string | undefined)[] = Array.isArray(body.rowDestinations) ? body.rowDestinations : [];
     const existingPolicy: 'update' | 'skip' = body.existingPolicy === 'skip' ? 'skip' : 'update';
     const skipExisting = (i: number) => {
       const d = rowDecisions[i];
@@ -861,12 +862,16 @@ export async function POST(req: NextRequest) {
             // for a liquor shop (see resolveRowVariant).
             const { rowColour, rowSize } = resolveRowVariant(row, getVal, isLiquorImport);
             const rowVariantKey = variantKey(rowColour, rowSize);
+            // Bada Udyog: "Direct to Sale" rows bypass the mill stock tracking and
+            // update currentStock directly — same as a non-mill purchase import.
+            const isDirectSale = isMillImport && rowDestinations[i] === 'direct_sale';
+            const effectiveIsMillImport = isMillImport && !isDirectSale;
 
             if (!matchId) {
               // New product — seed variants[] with the current row's variant
               // if present, so per-variant stock tracking is live from row 1.
               // Mill pack: stock stays 0 — tracked via RawMaterialLots/batches.
-              const stockSeed = isMillImport ? 0 : quantity;
+              const stockSeed = effectiveIsMillImport ? 0 : quantity;
               const newVariants = rowVariantKey
                 ? [{
                     color: rowColour,
@@ -905,8 +910,9 @@ export async function POST(req: NextRequest) {
             } else {
               // Existing product — accumulate stock rollup.
               // Mill pack: skip stock update — tracked via RawMaterialLots/batches.
+              // Exception: "Direct to Sale" rows update currentStock even for mill shops.
               const newStock = (stockIndex.get(matchId) || 0) + quantity;
-              const updateData: any = isMillImport ? {} : {
+              const updateData: any = effectiveIsMillImport ? {} : {
                 currentStock: newStock,
               };
               // Never overwrite a real cost with 0 — a purchase row whose cost
@@ -947,7 +953,8 @@ export async function POST(req: NextRequest) {
             }
 
             // Mill pack: skip godown stock — stock tracked via RawMaterialLots/batches.
-            if (!isMillImport && godownId && matchId) {
+            // Exception: "Direct to Sale" rows update godown stock like a non-mill import.
+            if (!effectiveIsMillImport && godownId && matchId) {
               godownQtyMap.set(matchId, (godownQtyMap.get(matchId) || 0) + quantity);
             }
             if (matchId) affectedProductIds.add(matchId);

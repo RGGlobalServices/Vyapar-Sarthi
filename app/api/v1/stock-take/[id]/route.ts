@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
+import { openVariantStores, adjustVariantStores, closeVariantStores, sumStock } from '@/lib/variants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,23 +68,64 @@ export const PATCH = handle(async (req, ctx: any) => {
   if (body.action === 'commit') {
     const toApply = session.items.filter((i) => i.countedQty !== null && i.countedQty !== i.systemQty);
 
-    // Default interactive-transaction timeout (5s) is too tight against this
-    // app's remote DB under load — a stock take with a real double-digit
-    // variance count reliably blew past it ("Transaction already closed").
-    // Scales with item count instead of a single fixed bump.
+    // Group by productId so variant items for the same product are applied together.
+    const byProduct = new Map<string, typeof toApply>();
+    for (const item of toApply) {
+      if (!byProduct.has(item.productId)) byProduct.set(item.productId, []);
+      byProduct.get(item.productId)!.push(item);
+    }
+
     await prisma.$transaction(async (tx) => {
-      for (const item of toApply) {
-        const change = (item.countedQty as number) - item.systemQty;
-        await tx.product.update({ where: { id: item.productId }, data: { currentStock: { increment: change } } });
-        await tx.stockLog.create({
-          data: {
-            shopId: shop.id,
-            productId: item.productId,
-            type: change > 0 ? 'in' : 'out',
-            quantity: Math.abs(change),
-            note: `Stock Take${session.name ? `: ${session.name}` : ''} (system ${item.systemQty} → counted ${item.countedQty})`,
-          },
-        });
+      for (const [productId, productItems] of byProduct.entries()) {
+        const hasVariants = productItems.some((i) => (i as any).variantKey);
+
+        if (hasVariants) {
+          const product = await tx.product.findUnique({
+            where: { id: productId },
+            select: { size_variants: true, variants: true },
+          });
+          if (!product) continue;
+
+          const stores = openVariantStores(product);
+          for (const item of productItems) {
+            const vk = (item as any).variantKey as string | null;
+            if (!vk) continue;
+            const delta = (item.countedQty as number) - item.systemQty;
+            adjustVariantStores(stores, vk, delta, { createIfMissing: true });
+            await tx.stockLog.create({
+              data: {
+                shopId: shop.id,
+                productId,
+                type: delta > 0 ? 'in' : 'out',
+                quantity: Math.abs(delta),
+                note: `Stock Take${session.name ? `: ${session.name}` : ''} — ${vk} (system ${item.systemQty} → counted ${item.countedQty})`,
+              },
+            });
+          }
+
+          const storeWrite = closeVariantStores(stores);
+          const newTotal = stores.rows
+            ? sumStock(stores.rows)
+            : Object.values(stores.map || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+          await tx.product.update({
+            where: { id: productId },
+            data: { ...(storeWrite as any), currentStock: newTotal },
+          });
+        } else {
+          for (const item of productItems) {
+            const change = (item.countedQty as number) - item.systemQty;
+            await tx.product.update({ where: { id: productId }, data: { currentStock: { increment: change } } });
+            await tx.stockLog.create({
+              data: {
+                shopId: shop.id,
+                productId,
+                type: change > 0 ? 'in' : 'out',
+                quantity: Math.abs(change),
+                note: `Stock Take${session.name ? `: ${session.name}` : ''} (system ${item.systemQty} → counted ${item.countedQty})`,
+              },
+            });
+          }
+        }
       }
       await tx.stockTakeSession.update({ where: { id }, data: { status: 'completed', completedAt: new Date() } });
     }, { timeout: Math.max(15000, toApply.length * 2000) });

@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
-import { MILL_CHARGE_KEYS, type MillResult } from '@/lib/millBilling';
+import { MILL_CHARGE_KEYS, type MillResult, type MillChargeKey } from '@/lib/millBilling';
+import type { MillChargeInputs } from '@/lib/mill/billingDefaults';
 import { cn } from '@/lib/utils';
 
 const money = (n: number) => `₹${(Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -16,7 +17,7 @@ function Row({ label, value, testid, muted, strong, sub }: { label: ReactNode; v
   );
 }
 
-/** Title-above, boxed-value-below tile — the compact "field" unit the GST/charges grid is built from. */
+/** Read-only tile — for GST and Round Off which are always auto-calculated. */
 function Tile({ label, value, testid, muted, highlight }: { label: ReactNode; value: ReactNode; testid?: string; muted?: boolean; highlight?: boolean }) {
   return (
     <div className="min-w-0">
@@ -38,6 +39,35 @@ function Tile({ label, value, testid, muted, highlight }: { label: ReactNode; va
   );
 }
 
+/** Editable input tile — for freight, hamali, loading, unloading, other charges. */
+function InputTile({ label, chargeKey, value, onChange, disabled, testid }: {
+  label: ReactNode;
+  chargeKey: MillChargeKey;
+  value: string;
+  onChange: (k: MillChargeKey, v: string) => void;
+  disabled?: boolean;
+  testid?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <label htmlFor={`mill-charge-${chargeKey}`} className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-1 truncate block">{label}</label>
+      <input
+        id={`mill-charge-${chargeKey}`}
+        data-testid={testid || `mill-charge-${chargeKey}`}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.01"
+        placeholder="0"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(chargeKey, e.target.value)}
+        className="w-full h-9 px-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:opacity-60"
+      />
+    </div>
+  );
+}
+
 /**
  * Mill Billing totals, in the approved order:
  *   Goods Subtotal → Discount → Taxable → GST → Freight → Hamali → Loading → Unloading → Other → Round Off →
@@ -48,24 +78,29 @@ function Tile({ label, value, testid, muted, highlight }: { label: ReactNode; va
  * Layout: the running subtotal (Goods → Discount → Taxable) reads top-to-bottom as a list since each line
  * depends on the one above it; GST and the charge breakdown don't depend on each other, so they sit in a
  * 3-per-row tile grid (label on top, value boxed below) instead of one long list of rows.
+ *
+ * When chargeInputs + onChargeChange are provided, charge tiles become editable inputs inline.
  */
 export default function MillTotalsSummary({
   calc, itemsCount, discountSlot, collected, balance, showPaymentStatus = true,
+  chargeInputs, onChargeChange, chargesDisabled,
 }: {
   calc: MillResult | null;
   itemsCount: number;
   discountSlot: ReactNode;
   collected: number;
   balance: number;
-  /** Hide Amount Received / Balance-Udhar — the main billing page shows the running total only;
-   *  payment collection and the final balance are the Checkout modal's job, so showing them twice
-   *  (with the main page's copy frozen before payment is even entered) was redundant and confusing. */
   showPaymentStatus?: boolean;
+  /** When provided, charge tiles become editable inputs. */
+  chargeInputs?: MillChargeInputs;
+  onChargeChange?: (key: MillChargeKey, value: string) => void;
+  chargesDisabled?: boolean;
 }) {
   const t = useTranslations('MillBilling');
   const zero = { freight: 0, hamali: 0, loading: 0, unloading: 0, other: 0 };
   const charges = calc?.charges ?? zero;
   const gstBilled = !!calc?.gstBilled;
+  const editable = !!(chargeInputs && onChargeChange);
 
   const taxTiles = gstBilled
     ? (calc!.interState
@@ -76,13 +111,6 @@ export default function MillTotalsSummary({
           ]
       ).concat([{ key: 'gst', label: t('gst'), value: money(calc!.totalGst) }])
     : [{ key: 'gst', label: t('gst'), value: money(0), muted: true, note: t('gstNotApplicable') }];
-
-  const chargeTiles = MILL_CHARGE_KEYS.map((k) => ({
-    key: k,
-    label: t(k === 'other' ? 'otherCharges' : k),
-    value: money(charges[k]),
-    muted: !charges[k],
-  }));
 
   const roundOffTile = {
     key: 'roundoff',
@@ -104,25 +132,35 @@ export default function MillTotalsSummary({
         <Row label={t('taxableAmount')} value={money(calc?.taxable ?? 0)} strong testid="mill-taxable" />
       </div>
 
-      {/* Tax + charges — independent figures, shown as labelled tiles, 3 per row */}
+      {/* Tax + charges — 3 per row grid */}
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2">
         {taxTiles.map((tile) => (
           <Tile key={tile.key} label={tile.label} value={tile.value} muted={(tile as any).muted} testid={`mill-${tile.key}`} />
         ))}
-        {chargeTiles.map((tile) => (
-          <Tile key={tile.key} label={tile.label} value={tile.value} muted={tile.muted} testid={`mill-${tile.key}`} />
+        {MILL_CHARGE_KEYS.map((k) => (
+          editable ? (
+            <InputTile
+              key={k}
+              chargeKey={k}
+              label={t(k === 'other' ? 'otherCharges' : k)}
+              value={chargeInputs![k]}
+              onChange={onChargeChange!}
+              disabled={chargesDisabled}
+              testid={`mill-${k}`}
+            />
+          ) : (
+            <Tile key={k} label={t(k === 'other' ? 'otherCharges' : k)} value={money(charges[k])} muted={!charges[k]} testid={`mill-${k}`} />
+          )
         ))}
         <Tile label={roundOffTile.label} value={roundOffTile.value} muted={roundOffTile.muted} testid="mill-roundoff" />
       </div>
 
-      {/* Grand total — the one figure that matters most, kept as a full-width banner */}
+      {/* Grand total */}
       <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end gap-3">
         <span className="text-sm font-bold text-slate-900 dark:text-slate-200">{t('grandTotal')}</span>
         <span data-testid="mill-grand-total" className="text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono tracking-tight">{money(calc?.grandTotal ?? 0)}</span>
       </div>
 
-      {/* Payment status — received vs outstanding, side by side. Checkout-only: this page's
-          "collected" is always ₹0 before the Checkout modal is even opened. */}
       {showPaymentStatus && (
         <div className="grid grid-cols-2 gap-2">
           <Tile label={t('amountReceived')} value={money(collected)} testid="mill-received" />

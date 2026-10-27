@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, query, ApiError } from '@/lib/server/http';
+import { getBellCache, setBellCache, invalidateCalendarCache, type BellResult } from '@/lib/server/calendarCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,8 @@ export const GET = handle(async (req) => {
   const where: Record<string, unknown> = { shopId: shop.id };
 
   if (q.bell) {
+    const cached = getBellCache(shop.id);
+    if (cached) return json(cached);
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     
@@ -38,8 +41,10 @@ export const GET = handle(async (req) => {
         take: 3,
       })
     ]);
-    
-    return json({ upcoming, pastPending, recentCompleted });
+
+    const bellResult: BellResult = { upcoming, pastPending, recentCompleted };
+    setBellCache(shop.id, bellResult);
+    return json(bellResult);
   }
 
   if (q.month && /^\d{4}-\d{2}$/.test(q.month)) {
@@ -90,5 +95,6 @@ export const POST = handle(async (req) => {
       reminderDays: b.reminderDays != null ? parseInt(b.reminderDays) : 1,
     },
   });
+  invalidateCalendarCache(shop.id);
   return json(event, 201);
 });

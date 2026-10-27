@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
+import { TableSkeleton } from '@/components/ui/skeleton';
 import { ShoppingCart, Plus, Loader2, Search, Warehouse, Package, ArrowRight, ShieldCheck, X, FileText, Pencil, Trash2, Filter, AlertTriangle, Calculator, Check, Sparkles, RotateCcw, Printer, Wheat, Camera, Image as ImageIcon } from 'lucide-react';
 import { useBusinessStore } from '@/lib/businessStore';
 import api from '@/lib/api';
@@ -23,7 +24,7 @@ const fetcher = ([url]: [string, string]) => api.get(url).then(res => res.data);
 const godownsFetcher = ([url]: [string, string]) => api.get(url).then(res => res.data?.data || res.data);
 
 const emptyItem = () => ({
-  productId: '', quantity: 1, cost: 0, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '',
+  productId: '', quantity: 1 as number | string, cost: 0 as number | string, batchNumber: '', expiryDate: '', sellingPrice: '', unitId: '', conversionFactor: 1, unitLabel: '',
   // Where this line should land beyond the ordinary stock credit every purchased item already gets:
   // 'raw_material' queues it for milling, 'not_packed' makes it show in Milling -> Not Packed (finished goods)
   // so it can be weighed into bags, 'by_product_not_packed' makes it show in Milling -> By-Products Not Packed
@@ -455,12 +456,16 @@ export default function PurchasesPage() {
     if (!newProd || !newProd.name.trim()) return;
     setCreatingProd(true);
     try {
-      const millCategory = newProd.category;
-      const label = millCategory === 'raw_material' ? 'Raw Material' : millCategory === 'finished_goods' ? 'Finished Goods' : 'By-Products';
-      const { data: created } = await api.post('/products', { name: newProd.name.trim(), category: label, millCategory, baseUnit: newProd.unit, currentStock: 0, sellingPrice: 0 });
+      let payload: Record<string, any> = { name: newProd.name.trim(), currentStock: 0, sellingPrice: 0 };
+      if (isMill) {
+        const millCategory = newProd.category;
+        const label = millCategory === 'raw_material' ? 'Raw Material' : millCategory === 'finished_goods' ? 'Finished Goods' : 'By-Products';
+        payload = { ...payload, category: label, millCategory, baseUnit: newProd.unit };
+      }
+      const { data: created } = await api.post('/products', payload);
       await mutateProductsList();
       const newItems = [...items];
-      const u = MILL_UNITS.find(x => x.key === newProd.unit);
+      const u = isMill ? MILL_UNITS.find(x => x.key === newProd.unit) : undefined;
       newItems[newProd.index].productId = created.id;
       newItems[newProd.index].unitLabel = u ? u.key : '';
       newItems[newProd.index].conversionFactor = 1;
@@ -874,46 +879,61 @@ export default function PurchasesPage() {
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap md:flex-nowrap gap-2 sm:gap-3 items-end">
                     <div className="col-span-2 sm:col-span-1 flex-1 min-w-[200px]">
                       <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{t('productLabel') || 'Product'}</label>
-                      <select required value={item.productId} onChange={e => {
-                        const newItems = [...items];
-                        newItems[index].productId = e.target.value;
-                        newItems[index].variantQty = {}; // stale picks from the previous product
-                        setItems(newItems);
-                      }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
-                        <option value="">{t('selectProduct') || 'Select Product...'}</option>
-                        {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                      {isMill && (
-                        <>
-                          <button type="button" onClick={() => setNewProd({ index, name: '', unit: 'kg', category: 'raw_material' })}
-                            className="mt-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1">
-                            <Plus size={12} /> {t('millNewProduct')}
-                          </button>
-                          {newProd?.index === index && (
-                            <div className="mt-2 grid grid-cols-2 gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" data-testid="new-product-form">
-                              <input autoFocus placeholder={t('millNewProductName')} value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })}
-                                className="col-span-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white" />
-                              <select value={newProd.category} onChange={e => setNewProd({ ...newProd, category: e.target.value })}
-                                className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
-                                <option value="raw_material">{t('millCatRaw')}</option>
-                                <option value="finished_goods">{t('millCatFinished')}</option>
-                                <option value="by_product">{t('millCatByProduct')}</option>
-                              </select>
-                              <select value={newProd.unit} onChange={e => setNewProd({ ...newProd, unit: e.target.value })}
-                                className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
-                                {MILL_UNITS.slice(0, 3).map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
-                              </select>
-                              <p className="col-span-2 text-[10px] text-amber-700 dark:text-amber-400">{t('millNewProductHint')}</p>
-                              <div className="col-span-2 flex gap-2 justify-end">
-                                <button type="button" onClick={() => setNewProd(null)} className="px-3 py-1.5 text-xs font-semibold text-slate-500">{t('cancel') || 'Cancel'}</button>
-                                <button type="button" onClick={createProductInline} disabled={creatingProd || !newProd.name.trim()}
-                                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 flex items-center gap-1">
-                                  {creatingProd ? <Loader2 size={12} className="animate-spin" /> : null} {t('millConfirmCreate')}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </>
+                      <div className="flex gap-2">
+                        <select required value={item.productId} onChange={e => {
+                          const newItems = [...items];
+                          newItems[index].productId = e.target.value;
+                          newItems[index].variantQty = {}; // stale picks from the previous product
+                          setItems(newItems);
+                        }} className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors">
+                          <option value="">{t('selectProduct') || 'Select Product...'}</option>
+                          {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        <button type="button"
+                          onClick={() => setNewProd({ index, name: '', unit: isMill ? 'kg' : '', category: isMill ? 'raw_material' : '' })}
+                          className="px-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+                          title={t('addNewProduct') || 'Add New Product'}>
+                          +
+                        </button>
+                      </div>
+                      {newProd?.index === index && isMill && (
+                        <div className="mt-2 grid grid-cols-2 gap-2 p-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" data-testid="new-product-form">
+                          <input autoFocus placeholder={t('millNewProductName')} value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })}
+                            className="col-span-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white" />
+                          <select value={newProd.category} onChange={e => setNewProd({ ...newProd, category: e.target.value })}
+                            className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
+                            <option value="raw_material">{t('millCatRaw')}</option>
+                            <option value="finished_goods">{t('millCatFinished')}</option>
+                            <option value="by_product">{t('millCatByProduct')}</option>
+                          </select>
+                          <select value={newProd.unit} onChange={e => setNewProd({ ...newProd, unit: e.target.value })}
+                            className="px-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white">
+                            {MILL_UNITS.slice(0, 3).map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
+                          </select>
+                          <p className="col-span-2 text-[10px] text-amber-700 dark:text-amber-400">{t('millNewProductHint')}</p>
+                          <div className="col-span-2 flex gap-2 justify-end">
+                            <button type="button" onClick={() => setNewProd(null)} className="px-3 py-1.5 text-xs font-semibold text-slate-500">{t('cancel') || 'Cancel'}</button>
+                            <button type="button" onClick={createProductInline} disabled={creatingProd || !newProd.name.trim()}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 flex items-center gap-1">
+                              {creatingProd ? <Loader2 size={12} className="animate-spin" /> : null} {t('millConfirmCreate')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {newProd?.index === index && !isMill && (
+                        <div className="mt-2 p-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10">
+                          <input autoFocus placeholder={t('enterProductName') || 'Enter product name...'}
+                            value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createProductInline(); } }}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white" />
+                          <div className="flex gap-2 mt-2 justify-end">
+                            <button type="button" onClick={() => setNewProd(null)} className="px-3 py-1.5 text-xs font-semibold text-slate-500">{t('cancel') || 'Cancel'}</button>
+                            <button type="button" onClick={createProductInline} disabled={creatingProd || !newProd.name.trim()}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 flex items-center gap-1">
+                              {creatingProd ? <Loader2 size={12} className="animate-spin" /> : null} {t('addNewProduct') || 'Add'}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                     {singleColour && (
@@ -936,7 +956,7 @@ export default function PurchasesPage() {
                           onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
                           onChange={e => {
                             const newItems = [...items];
-                            newItems[index].quantity = isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1);
+                            newItems[index].quantity = e.target.value === '' ? '' : (isMill ? (parseFloat(e.target.value) || 0) : (parseInt(e.target.value) || 1));
                             setItems(newItems);
                           }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-right font-mono text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       </div>
@@ -1003,7 +1023,7 @@ export default function PurchasesPage() {
                           onFocus={e => { const t = e.target; setTimeout(() => t.select(), 0); }}
                           onChange={e => {
                             const newItems = [...items];
-                            newItems[index].cost = parseFloat(e.target.value) || 0;
+                            newItems[index].cost = e.target.value === '' ? '' : (parseFloat(e.target.value) || 0);
                             setItems(newItems);
                           }} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors" />
                       )}
@@ -1333,7 +1353,7 @@ export default function PurchasesPage() {
       </Card>
 
       {isLoading ? (
-        <div className="flex justify-center h-32 items-center"><Loader2 className="animate-spin text-emerald-500 w-8 h-8" /></div>
+        <div className="p-4"><TableSkeleton rows={6} cols={5} /></div>
       ) : invoices.length === 0 ? (
         <div className="text-center py-20 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
           <ShoppingCart className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />

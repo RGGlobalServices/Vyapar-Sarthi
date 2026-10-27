@@ -53,7 +53,6 @@ import {
 } from '@/lib/mill/billingDefaults';
 // Mill-specific components — lazy-loaded so Dukan/Vyapar/Wholesale users never download mill code
 const MillRateInput = nextDynamic(() => import('@/components/billing/MillRateInput'));
-const MillCommercialCharges = nextDynamic(() => import('@/components/billing/MillCommercialCharges'));
 const MillTotalsSummary = nextDynamic(() => import('@/components/billing/MillTotalsSummary'));
 const MillBillSavedModal = nextDynamic(() => import('@/components/billing/MillBillSavedModal'));
 const MillInvoicePreviewModal = nextDynamic(() => import('@/components/invoice/MillInvoicePreviewModal'));
@@ -305,6 +304,156 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     </div>
   );
 };
+
+// Pool picker for billing mill goods from the total FG pool (FIFO, no lot selection).
+// Shows aggregate bag/goni counts across all lots; user enters bags, kg is auto-calculated.
+// Falls back to kg input when no pack data exists (e.g. loose/bulk lots).
+function FgTotalPickerModal({
+  product,
+  fgLots,
+  totalKg,
+  onClose,
+  onConfirm,
+}: {
+  product: any;
+  fgLots: any[];
+  totalKg: number;
+  onClose: () => void;
+  onConfirm: (qty: number) => void;
+}) {
+  const t = useTranslations('Billing');
+
+  // Aggregate pack counts across all lots, grouped by packType+packKg.
+  const aggPacksList = useMemo(() => {
+    const map = new Map<string, { packType: string; packKg: number; totalPacks: number }>();
+    for (const lot of fgLots) {
+      for (const pk of lot.packs || []) {
+        const key = `${pk.packType}:${pk.packKg}`;
+        if (!map.has(key)) map.set(key, { packType: pk.packType, packKg: Number(pk.packKg), totalPacks: 0 });
+        map.get(key)!.totalPacks += Number(pk.packs);
+      }
+    }
+    return [...map.values()];
+  }, [fgLots]);
+
+  const hasPacks = aggPacksList.length > 0;
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [directKg, setDirectKg] = useState('');
+
+  const packKey = (pt: string, kg: number) => `${pt}:${kg}`;
+
+  const totalFromBags = hasPacks
+    ? aggPacksList.reduce((sum, pk) => sum + (counts[packKey(pk.packType, pk.packKg)] || 0) * pk.packKg, 0)
+    : Number(directKg) || 0;
+
+  const canAdd = totalFromBags > 0 && totalFromBags <= totalKg + 0.005;
+
+  const typeLabel = (pt: string) => pt === 'goni' ? 'Goni' : pt === 'other' ? 'Pack' : 'Bag';
+
+  const handleConfirm = () => {
+    if (!canAdd) return;
+    onConfirm(parseFloat(totalFromBags.toFixed(3)));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl w-full max-w-sm shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-700">
+          <p className="font-bold text-slate-900 dark:text-white">{product.name}</p>
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">{t('billFromPool')}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {fgLots.length === 1 ? t('lotsReady', { n: 1 }) : t('lotsReadyPlural', { n: fgLots.length })}
+            {' · '}
+            <span className="font-semibold text-slate-600 dark:text-slate-300">{totalKg % 1 === 0 ? totalKg : totalKg.toFixed(2)} kg available</span>
+          </p>
+        </div>
+
+        {/* Pack rows or direct kg input */}
+        <div className="px-5 py-4 space-y-4">
+          {hasPacks ? (
+            aggPacksList.map((pk) => {
+              const key = packKey(pk.packType, pk.packKg);
+              const val = counts[key] || 0;
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      {typeLabel(pk.packType)} · {pk.packKg} kg each
+                    </p>
+                    <p className="text-[11px] text-slate-500">{pk.totalPacks} {typeLabel(pk.packType).toLowerCase()} available</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCounts(c => ({ ...c, [key]: Math.max(0, (c[key] || 0) - 1) }))}
+                      className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-lg flex items-center justify-center active:scale-95"
+                    >−</button>
+                    <input
+                      type="number"
+                      min="0"
+                      max={pk.totalPacks}
+                      value={val === 0 ? '' : val}
+                      onChange={(e) => {
+                        const n = Math.max(0, Math.min(pk.totalPacks, Math.floor(Number(e.target.value) || 0)));
+                        setCounts(c => ({ ...c, [key]: n }));
+                      }}
+                      placeholder="0"
+                      className="w-14 text-center font-bold text-slate-900 dark:text-white tabular-nums bg-slate-50 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 rounded-lg py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCounts(c => ({ ...c, [key]: Math.min(pk.totalPacks, (c[key] || 0) + 1) }))}
+                      className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold text-lg flex items-center justify-center active:scale-95"
+                    >+</button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">{t('enterQtyToSell')}</label>
+              <input
+                type="number"
+                min="0.001"
+                step="0.001"
+                max={totalKg}
+                value={directKg}
+                onChange={(e) => setDirectKg(e.target.value)}
+                autoFocus
+                className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-base focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                placeholder={`max ${totalKg % 1 === 0 ? totalKg : totalKg.toFixed(2)} kg`}
+              />
+            </>
+          )}
+          {totalFromBags > totalKg + 0.005 && (
+            <p className="text-xs text-red-500">{t('exceedsAvailable', { available: totalKg % 1 === 0 ? totalKg : totalKg.toFixed(2), unit: 'kg' })}</p>
+          )}
+          {hasPacks && totalFromBags > 0 && totalFromBags <= totalKg + 0.005 && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">= {totalFromBags % 1 === 0 ? totalFromBags : totalFromBags.toFixed(2)} kg</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-5 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm font-medium text-slate-600 dark:text-slate-300">
+            Cancel
+          </button>
+          <button
+            disabled={!canAdd}
+            onClick={handleConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-emerald-500 disabled:opacity-40 text-white font-bold text-sm"
+          >
+            Add to Bill
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Pack-level picker for a Finished Goods Lot — lets the user choose how many
 // of each pack size (e.g. 3 × 5kg Bags and 1 × 10kg Bag) to bill before
@@ -919,6 +1068,8 @@ export default function WholesaleBillingUI() {
   const [variantPickerSelections, setVariantPickerSelections] = useState<Record<string, string>>({});
   // FG Lot pack picker — opened when user clicks a lot with packs in mill billing.
   const [fgLotPackPicker, setFgLotPackPicker] = useState<{ product: any; lot: any } | null>(null);
+  // FG total pool picker — opened when user clicks "X lots ready — Y kg total" to bill via FIFO.
+  const [fgTotalPicker, setFgTotalPicker] = useState<{ product: any; fgLots: any[]; totalKg: number } | null>(null);
   // Lot/batch picker — see addToCart's comment for when this fires.
   const [batchSelectionProduct, setBatchSelectionProduct] = useState<any>(null);
   const [batchSelectionVariant, setBatchSelectionVariant] = useState<string | undefined>(undefined);
@@ -1121,7 +1272,7 @@ export default function WholesaleBillingUI() {
     }
   }, [isWholesale, products, getPrice, items, updatePrice]);
 
-  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null, fgLotInfo?: { fgLotId: string; fgLotNumber: string; packBreakdown?: Array<{ packType: string; packKg: number; count: number }>; initialQty?: number } | null) => {
+  const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null, fgLotInfo?: { fgLotId: string | null; fgLotNumber: string | null; packBreakdown?: Array<{ packType: string; packKg: number; count: number }>; initialQty?: number } | null) => {
     // Instant feedback the moment ANY add is triggered — closes the search
     // dropdown and clears the box right away, before the (possibly slow,
     // see the batch lookup below) async work even starts. Without this the
@@ -2116,6 +2267,8 @@ export default function WholesaleBillingUI() {
                   // Mill mode: show Finished Goods Lots for this product if any exist
                   const fgLots = isMill ? (fgLotsByProduct[String(p.id)] || []) : [];
                   if (fgLots.length > 0) {
+                    const totalAvailableKg = fgLots.reduce((s: number, l: any) => s + Number(l.availableQuantity), 0);
+                    const lotsLabel = fgLots.length === 1 ? t('lotsReady', { n: 1 }) : t('lotsReadyPlural', { n: fgLots.length });
                     return (
                       <div key={p.id} className="border-b border-slate-100 dark:border-slate-700/50">
                         <div className="px-4 pt-2.5 pb-1">
@@ -2127,7 +2280,24 @@ export default function WholesaleBillingUI() {
                               </span>
                             )}
                           </p>
-                          <p className="text-[11px] text-slate-500">{fgLots.length} {fgLots.length === 1 ? 'lot' : 'lots'} ready — pick the lot to bill</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearch('');
+                              setSearchResults([]);
+                              setFgTotalPicker({ product: p, fgLots, totalKg: totalAvailableKg });
+                            }}
+                            className="text-left text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold hover:underline"
+                          >
+                            {lotsLabel} — {totalAvailableKg % 1 === 0 ? totalAvailableKg : totalAvailableKg.toFixed(2)} kg total · {t('billFromPool')} →
+                          </button>
+                          {(p.sellingPrice > 0 || p.wholesaleCost > 0) && (
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Retail: ₹{Number(p.sellingPrice || 0).toLocaleString('en-IN')}
+                              {' · '}
+                              Wholesale: ₹{Number(p.wholesaleCost || 0).toLocaleString('en-IN')}
+                            </p>
+                          )}
                         </div>
                         {fgLots.map((lot: any) => {
                           const packSummary = (lot.packs || []).map((pk: any) => {
@@ -2232,12 +2402,14 @@ export default function WholesaleBillingUI() {
               </div>
             )}
           </div>
-          <button
-            onClick={() => setShowManualAdd(true)}
-            className="px-4 py-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-xl font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <Plus size={20} /> {t('quickAdd') || 'Quick Add'} <span className="text-[10px] bg-emerald-200/50 dark:bg-emerald-900 px-1.5 rounded ml-1">Ctrl+K</span>
-          </button>
+          {!isMill && (
+            <button
+              onClick={() => setShowManualAdd(true)}
+              className="px-4 py-3 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-xl font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <Plus size={20} /> {t('quickAdd') || 'Quick Add'} <span className="text-[10px] bg-emerald-200/50 dark:bg-emerald-900 px-1.5 rounded ml-1">Ctrl+K</span>
+            </button>
+          )}
           {/* <button
             onClick={() => setShowManualBillUpload(true)}
             className="px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-sm"
@@ -2741,20 +2913,14 @@ export default function WholesaleBillingUI() {
             <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
             <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
           </div>
-          {/* Commercial Charges */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-            <MillCommercialCharges
-              values={millCharges}
-              onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
-              error={millChargesParsed.error}
-              disabled={isGenerating}
-            />
-          </div>
-          {/* Totals + Checkout */}
+          {/* Totals + Charges + Checkout — charges are now inline editable inputs in the tile grid */}
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 px-5 py-4">
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{tMill('gstAddedOnTop')}</p>
             {dupRestrictionActive && (
               <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5 mb-3">{tMill('duplicateLocked')}</p>
+            )}
+            {millChargesParsed.error && (
+              <p data-testid="mill-charges-error" className="mb-2 text-xs font-semibold text-red-500">{tMill('chargesInvalid')}: {millChargesParsed.error}</p>
             )}
             <MillTotalsSummary
               calc={millCalc}
@@ -2763,6 +2929,9 @@ export default function WholesaleBillingUI() {
               balance={grandRemaining}
               discountSlot={<DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />}
               showPaymentStatus={false}
+              chargeInputs={millCharges}
+              onChargeChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
+              chargesDisabled={isGenerating}
             />
             <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
               <button
@@ -2855,22 +3024,21 @@ export default function WholesaleBillingUI() {
               {dupRestrictionActive && (
                 <p data-testid="mill-dup-note" className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-2 py-1.5">{tMill('duplicateLocked')}</p>
               )}
-              {/* Commercial charges & broker — right panel keeps left panel clear for cart */}
-              <MillCommercialCharges
-                values={millCharges}
-                onChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
-                error={millChargesParsed.error}
-                disabled={isGenerating}
-              />
               <BrokerField kind="customer" value={saleBroker} onChange={setSaleBroker} />
               <DispatchDetailsField value={dispatch} onChange={setDispatch} disabled={isGenerating} />
               {partyMode && selectedParty && <BillPartyDetailsField value={billParty} onChange={setBillParty} disabled={isGenerating} />}
+              {millChargesParsed.error && (
+                <p data-testid="mill-charges-error" className="text-xs font-semibold text-red-500">{tMill('chargesInvalid')}: {millChargesParsed.error}</p>
+              )}
               <MillTotalsSummary
                 calc={millCalc}
                 itemsCount={items.length}
                 collected={collectedAmount}
                 balance={grandRemaining}
                 discountSlot={<DiscountInput subtotal={subtotal} discount={discount} setDiscount={setDiscount} />}
+                chargeInputs={millCharges}
+                onChargeChange={(k: MillChargeKey, v: string) => setMillCharges((c) => ({ ...c, [k]: v }))}
+                chargesDisabled={isGenerating}
               />
             </div>
           ) : (
@@ -4009,6 +4177,21 @@ export default function WholesaleBillingUI() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* FG Total Pool Picker — bill from total pool via FIFO lot deduction. */}
+      {fgTotalPicker && (
+        <FgTotalPickerModal
+          product={fgTotalPicker.product}
+          fgLots={fgTotalPicker.fgLots}
+          totalKg={fgTotalPicker.totalKg}
+          onClose={() => setFgTotalPicker(null)}
+          onConfirm={(qty) => {
+            const prod = fgTotalPicker.product;
+            setFgTotalPicker(null);
+            addToCart(prod, undefined, false, null, { fgLotId: null, fgLotNumber: null, packBreakdown: [], initialQty: qty });
+          }}
+        />
       )}
 
       {/* FG Lot Pack Picker — opens when user selects a finished goods lot;

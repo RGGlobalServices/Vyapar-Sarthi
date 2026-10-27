@@ -19,6 +19,7 @@ type ImportType = 'product' | 'purchase' | 'stock' | 'suppliers' | 'customers' |
 type Step = 'upload' | 'preview' | 'importing' | 'done';
 type RowMatch = { status: 'new' | 'existing'; existingName?: string };
 type RowDecision = 'update' | 'skip' | undefined;
+type RowDestination = 'mill' | 'direct_sale';
 
 /** Freight / hamali style charge names (English, Hindi, Marathi) — the mill's own truck and labour cost. */
 const MILL_OWN_COST = /freight|hamali|haamali|transport|bhade|bhada|loading|unloading|हमाली|भाड|भाडे|मालs*भाड/i;
@@ -44,6 +45,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // "when a record exists" policy, and any per-row override.
   const [rowMatches, setRowMatches] = useState<RowMatch[]>([]);
   const [rowDecisions, setRowDecisions] = useState<RowDecision[]>([]);
+  const [rowDestinations, setRowDestinations] = useState<RowDestination[]>([]);
   const [existingPolicy, setExistingPolicy] = useState<'update' | 'skip'>('update');
   const [checkingMatches, setCheckingMatches] = useState(false);
 
@@ -169,6 +171,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         setHeaders(saved.headers || []);
         setPreviewData(saved.rows);
         setRowDecisions(saved.decisions || new Array(saved.rows.length).fill(undefined));
+        setRowDestinations(saved.destinations || new Array(saved.rows.length).fill('mill'));
         setResumeState({ importLogId: importLogId || null, offset: offset || 0 });
         setStep('preview');
       }
@@ -199,6 +202,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     // just the first screenful. The user can still deselect individual rows.
     setSelectedRows(rows.map((_, i) => i));
     setRowDecisions(new Array(rows.length).fill(undefined));
+    setRowDestinations(new Array(rows.length).fill('mill'));
     setRowMatches([]);
     validateData(rows, displayHeaders);
     setStep('preview');
@@ -464,6 +468,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setPreviewData(prev => prev.filter((_, i) => i !== rowIndex));
     setRowMatches(prev => prev.filter((_, i) => i !== rowIndex));
     setRowDecisions(prev => prev.filter((_, i) => i !== rowIndex));
+    setRowDestinations(prev => prev.filter((_, i) => i !== rowIndex));
+    setSelectedRows(prev => prev.filter(i => i !== rowIndex).map(i => i > rowIndex ? i - 1 : i));
   };
 
   // "Enter Manually" — skips the file/AI step entirely and drops straight
@@ -477,8 +483,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     const initialRows = Array.from({ length: 5 }, blankRow);
     setHeaders(templateHeaders);
     setPreviewData(initialRows);
-    setSelectedRows([]);
+    setSelectedRows(initialRows.map((_, i) => i));
     setRowDecisions(new Array(initialRows.length).fill(undefined));
+    setRowDestinations(new Array(initialRows.length).fill('mill'));
     setRowMatches([]);
     setErrors([]);
     setFiles([]);
@@ -494,6 +501,8 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setPreviewData(prev => [...prev, blank]);
     setRowMatches(prev => [...prev, undefined as any]);
     setRowDecisions(prev => [...prev, undefined]);
+    setRowDestinations(prev => [...prev, 'mill']);
+    setSelectedRows(prev => [...prev, previewData.length]);
     setCurrentPage(Math.max(1, Math.ceil((previewData.length + 1) / pageSize)));
   };
 
@@ -501,6 +510,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   // that aren't part of the default review columns, offered here instead of
   // showing them in every import. Picking one adds it to every row (blank,
   // fillable), same as a template column the file itself had.
+  const isMillPurchase = importType === 'purchase' && isMillBillingPackage(profile?.packageType);
   const addableColumns = getAddableColumns(importType, isMillBillingPackage(profile?.packageType)).filter(c => !headers.includes(c.label));
   const handleAddColumn = (label: string) => {
     if (!label || headers.includes(label)) return;
@@ -533,9 +543,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
   function detectSizeHintFromName(name: string): SizeHint {
     const n = name.toLowerCase();
-    if (/shoe|sandal|chappal|chappla|boot|slipper|footwear|juta|joota|paduka|चप्पल|जोडा/.test(n)) return 'shoes';
+    if (/shoe|sandal|chappal|chappla|boot|slipper|footwear|juta|joota|paduka|mojadi|mojari|juti|jutti|चप्पल|जोडा|मोजडी|जुती/.test(n)) return 'shoes';
     if (/saree|sari|साडी|dupatta|duppata/.test(n)) return 'saree';
     if (/meter|metre|कापड|मीटर/.test(n)) return 'fabric';
+    if (/brief|trunk|baniyan|ganji|sando|chaddi|innerwear|underwear|panty|panties|bra\b|बनियान|चड्डी/.test(n)) return 'underwear';
     return 'auto';
   }
 
@@ -552,7 +563,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
         continue;
       }
       const sizeHint = detectSizeHintFromName(String(r['Product Name'] ?? ''));
-      const sizes = parseSizeRange(p.size || '', { hint: sizeHint });
+      const sizes = parseSizeRange(p.size || '', { hint: sizeHint, dimensions: sizeHint !== 'shoes' });
       if (sizes.length <= 1) {
         // Single size — one row, keep original name, fill Colour+Size only
         newRows.push({ ...r, __origName: r['Product Name'], Size: p.size, Colour: p.color });
@@ -590,6 +601,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setPreviewData(rows);
     validateData(rows, headers);
     setRowDecisions(new Array(rows.length).fill(undefined));
+    setRowDestinations(new Array(rows.length).fill('mill'));
     await refreshMatches(rows);
   };
 
@@ -597,6 +609,14 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     setRowDecisions(prev => {
       const next = [...prev];
       next[rowIndex] = decision;
+      return next;
+    });
+  };
+
+  const setDestination = (rowIndex: number, dest: RowDestination) => {
+    setRowDestinations(prev => {
+      const next = [...prev];
+      next[rowIndex] = dest;
       return next;
     });
   };
@@ -709,7 +729,10 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
   const existingCount = rowMatches.filter(m => m?.status === 'existing').length;
   const newCount = rowMatches.filter(m => m?.status === 'new').length;
-  const willImportCount = previewData.reduce((acc, _, i) => acc + (effectiveAction(i) === 'skip' ? 0 : 1), 0);
+  const willImportCount = previewData.reduce((acc, _, i) => {
+    if (selectedRows.length > 0 && !selectedRows.includes(i)) return acc;
+    return acc + (effectiveAction(i) === 'skip' ? 0 : 1);
+  }, 0);
 
   const validateData = (rows: any[], cols: string[]) => {
     // Basic validation based on importType
@@ -735,7 +758,20 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
   const handleExecuteImport = async (startOffset = 0, existingLogId: string | null = null) => {
     setIsProcessing(true);
     setResumeState(null);
-    const total = previewData.length;
+    // Only import rows the user has checked. If somehow nothing is selected, fall
+    // back to all rows so a resume (which fires with the original selectedRows
+    // snapshot) never silently imports zero items.
+    const selSet = new Set(selectedRows);
+    const importRows = selSet.size > 0
+      ? previewData.filter((_, i) => selSet.has(i))
+      : previewData;
+    const importDecisions = selSet.size > 0
+      ? rowDecisions.filter((_, i) => selSet.has(i))
+      : rowDecisions;
+    const importDestinations = selSet.size > 0
+      ? rowDestinations.filter((_, i) => selSet.has(i))
+      : rowDestinations;
+    const total = importRows.length;
     const totalBatches = Math.ceil(total / DB_BATCH_SIZE);
     const t0 = Date.now();
     let importLogId = existingLogId;
@@ -768,8 +804,9 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
     try {
       for (let b = Math.floor(offset / DB_BATCH_SIZE); offset < total; b++) {
         const sliceStart = offset;
-        const slice = previewData.slice(offset, offset + DB_BATCH_SIZE).map(({ __origName, ...r }: any) => r);
-        const sliceDecisions = rowDecisions.slice(offset, offset + DB_BATCH_SIZE);
+        const slice = importRows.slice(offset, offset + DB_BATCH_SIZE).map(({ __origName, ...r }: any) => r);
+        const sliceDecisions = importDecisions.slice(offset, offset + DB_BATCH_SIZE);
+        const sliceDestinations = importDestinations.slice(offset, offset + DB_BATCH_SIZE);
         const sliceCount = slice.length;
 
         // The progress bar/stats only advance once per BATCH (one HTTP round
@@ -809,6 +846,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
               res = await api.post('/wholesale-import/execute', {
                 importType, data: slice, godownId: selectedGodown, existingPolicy,
                 rowDecisions: sliceDecisions,
+                rowDestinations: isMillPurchase ? sliceDestinations : undefined,
                 fileName: files[0]?.name || null,
                 stats: offset === 0 ? extractionStats : null,
                 totalRows: total,
@@ -825,7 +863,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                 charges: (importType === 'purchase' && offset === 0) ? [
                   ...purchaseCharges.filter(c => c.name.trim() || c.amount !== '').map(c => ({ name: c.name.trim(), amount: c.amount })),
                   // Charge columns added to the review table (Hamali, Freight …): one bill per import, so each column's total is one bill charge.
-                  ...CHARGE_COLUMNS.filter(l => headers.includes(l) && !(isMillBillingPackage(profile?.packageType) && MILL_OWN_COST.test(l))).map(l => ({ name: l, amount: previewData.reduce((a, r) => a + (parseFloat(String(r[l] ?? '').replace(/[₹,\s]/g, '')) || 0), 0) })).filter(c => c.amount > 0),
+                  ...CHARGE_COLUMNS.filter(l => headers.includes(l) && !(isMillBillingPackage(profile?.packageType) && MILL_OWN_COST.test(l))).map(l => ({ name: l, amount: importRows.reduce((a, r) => a + (parseFloat(String(r[l] ?? '').replace(/[₹,\s]/g, '')) || 0), 0) })).filter(c => c.amount > 0),
                 ] : undefined,
               });
             } catch (e) {
@@ -915,7 +953,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
 
       if (importType === 'purchase' && isMillBillingPackage(profile?.packageType) && millBill && millSupplierId && (millOpts.gateEntry || millOpts.freight || millOpts.lots)) {
         try {
-          const first = previewData[0] || {};
+          const first = importRows[0] || {};
           const invKey = Object.keys(first).find(k => ['invoicenumber', 'billnumber', 'invoice'].includes(k.toLowerCase().replace(/[\s_-]/g, '')));
           const inv = invKey ? String(first[invKey] ?? '').trim() : '';
           const mr = await api.post('/mill/purchase-extras', { supplierId: millSupplierId, invoiceNumber: inv || undefined, millBill, options: millOpts });
@@ -926,7 +964,13 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
       }
       localStorage.removeItem(RESUME_KEY);
       try { localStorage.removeItem(`${RESUME_KEY}_data`); } catch {}
-      const purchaseGoodsTotalSnap = purchaseGoodsTotal;
+      const purchaseGoodsTotalSnap = importType === 'purchase'
+        ? importRows.reduce((sum, r) => {
+            const qty = parseFloat(String(r['Quantity'] ?? r['quantity'] ?? 0)) || 0;
+            const uc = parseFloat(String(r['Unit Cost'] ?? r['unit_cost'] ?? r['unitCost'] ?? 0)) || 0;
+            return sum + qty * uc;
+          }, 0)
+        : 0;
       const chargesSnap = purchaseCharges.reduce((a, c) => a + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
       const discountSnapAmt = Math.max(0, parseFloat(purchaseSupplier.discount) || 0);
       const freightDeductSnap = isMillBillingPackage(profile?.packageType) && millBill && millOpts.includeFreightDeduct ? (millBill.freightAdvance ?? 0) : 0;
@@ -1583,6 +1627,7 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                       />
                     </th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap sticky left-10 bg-slate-50 dark:bg-slate-800 z-10">Status</th>
+                    {isMillPurchase && <th className="px-3 py-3 font-medium whitespace-nowrap">{t('destinationCol')}</th>}
                     {headers.map((h, i) => (
                       <th key={i} className="px-4 py-3 font-medium whitespace-nowrap">{h}</th>
                     ))}
@@ -1624,6 +1669,22 @@ export default function ImportWizard({ importType, onBack }: { importType: Impor
                           <span className="text-[10px] text-slate-400">—</span>
                         )}
                       </td>
+                      {isMillPurchase && (
+                        <td className="px-2 py-1 whitespace-nowrap">
+                          <div className="flex items-center rounded-md bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold">
+                            <button type="button"
+                              onClick={() => setDestination(i, 'mill')}
+                              className={`px-1.5 py-0.5 rounded ${(rowDestinations[i] ?? 'mill') === 'mill' ? 'bg-emerald-500 text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {t('destMill')}
+                            </button>
+                            <button type="button"
+                              onClick={() => setDestination(i, 'direct_sale')}
+                              className={`px-1.5 py-0.5 rounded ${rowDestinations[i] === 'direct_sale' ? 'bg-blue-500 text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {t('destDirectSale')}
+                            </button>
+                          </div>
+                        </td>
+                      )}
                       {headers.map((h, j) => (
                         <td key={j} className="px-1 py-1 whitespace-nowrap">
                           <div className="flex items-center gap-0.5">

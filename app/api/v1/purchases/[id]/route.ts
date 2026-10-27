@@ -7,6 +7,7 @@ import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
 import { apiErrorResponse } from '@/lib/server/http';
 import prisma from '@/lib/server/prisma';
+import { Prisma } from '@prisma/client';
 import { reversePurchaseInvoiceEffects, cleanupPurchaseLedgerAndBatches, PurchaseReversalBlockedError } from '@/lib/server/purchases';
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas, type VariantStockDelta } from '@/lib/server/variantStock';
@@ -138,64 +139,81 @@ export async function PATCH(req: Request, { params }: Ctx) {
         },
       });
 
+      // Bulk-create items, batches, and movements (one query each instead of N per item).
+      await tx.purchaseItem.createMany({
+        data: processedItems.map((item: any) => ({
+          purchaseInvoiceId: id,
+          productId: item.productId,
+          variantId: item.variantId || null,
+          variantKey: item.variant || null,
+          quantity: item.baseQuantity,
+          cost: item.baseCost,
+          gst: item.gst || 0,
+          mrp: item.mrp != null ? Number(item.mrp) : null,
+          discountPercent: item.discountPercent != null ? Number(item.discountPercent) : null,
+        })),
+      });
+      await tx.batch.createMany({
+        data: processedItems.map((item: any) => ({
+          shopId: auth!.shop.id,
+          productId: item.productId,
+          variantId: item.variantId || null,
+          batchNumber: item.batchNumber || null,
+          mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
+          expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+          quantity: item.baseQuantity,
+          initialQuantity: item.baseQuantity,
+          costPrice: item.baseCost,
+          sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
+        })),
+      });
+      await tx.stockMovement.createMany({
+        data: processedItems.map((item: any) => ({
+          shopId: auth!.shop.id,
+          productId: item.productId,
+          variantId: item.variantId || null,
+          warehouseId,
+          type: 'purchase',
+          quantity: item.baseQuantity,
+          referenceId: id,
+        })),
+      });
+
+      // Aggregate stock deltas by product (items may share the same product across variants).
+      const stockDeltaByProduct = new Map<string, number>();
+      for (const item of processedItems) {
+        stockDeltaByProduct.set(item.productId, (stockDeltaByProduct.get(item.productId) || 0) + item.baseQuantity);
+      }
+
+      // Single bulk UPDATE for all products' current_stock (one DB round-trip instead of N).
+      // currentStock is nullable — COALESCE ensures NULL is treated as 0.
+      if (stockDeltaByProduct.size > 0) {
+        const stockValues = [...stockDeltaByProduct.entries()].map(([productId, delta]) =>
+          Prisma.sql`(${productId}::uuid, ${delta}::numeric)`
+        );
+        await tx.$executeRaw`
+          UPDATE products
+          SET current_stock = COALESCE(current_stock, 0) + v.delta
+          FROM (VALUES ${Prisma.join(stockValues)}) AS v(product_id, delta)
+          WHERE id = v.product_id AND shop_id = ${auth!.shop.id}::uuid
+        `;
+      }
+
+      // Single bulk INSERT ... ON CONFLICT UPDATE for godown stock (one round-trip instead of N upserts).
+      if (warehouseId && stockDeltaByProduct.size > 0) {
+        const godownValues = [...stockDeltaByProduct.entries()].map(([productId, delta]) =>
+          Prisma.sql`(${warehouseId}::uuid, ${productId}::uuid, ${delta}::numeric)`
+        );
+        await tx.$executeRaw`
+          INSERT INTO godown_products (godown_id, product_id, quantity)
+          SELECT v.godown_id, v.product_id, v.qty
+          FROM (VALUES ${Prisma.join(godownValues)}) AS v(godown_id, product_id, qty)
+          ON CONFLICT (godown_id, product_id)
+          DO UPDATE SET quantity = godown_products.quantity + EXCLUDED.quantity
+        `;
+      }
+
       await Promise.all([
-        tx.purchaseItem.createMany({
-          data: processedItems.map((item: any) => ({
-            purchaseInvoiceId: id,
-            productId: item.productId,
-            variantId: item.variantId || null,
-            variantKey: item.variant || null,
-            quantity: item.baseQuantity,
-            cost: item.baseCost,
-            gst: item.gst || 0,
-            mrp: item.mrp != null ? Number(item.mrp) : null,
-            discountPercent: item.discountPercent != null ? Number(item.discountPercent) : null,
-          })),
-        }),
-        tx.batch.createMany({
-          data: processedItems.map((item: any) => ({
-            shopId: auth!.shop.id,
-            productId: item.productId,
-            variantId: item.variantId || null,
-            batchNumber: item.batchNumber || null,
-            mfgDate: item.mfgDate ? new Date(item.mfgDate) : null,
-            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-            quantity: item.baseQuantity,
-            initialQuantity: item.baseQuantity,
-            costPrice: item.baseCost,
-            sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
-          })),
-        }),
-        tx.stockMovement.createMany({
-          data: processedItems.map((item: any) => ({
-            shopId: auth!.shop.id,
-            productId: item.productId,
-            variantId: item.variantId || null,
-            warehouseId,
-            type: 'purchase',
-            quantity: item.baseQuantity,
-            referenceId: id,
-          })),
-        }),
-        ...processedItems.flatMap((item: any) => [
-          // Skip when this shop's tier has no godowns (warehouseId null) —
-          // same reasoning as POST /purchases.
-          ...(warehouseId ? [tx.godownProduct.upsert({
-            where: { godownId_productId: { godownId: warehouseId, productId: item.productId } },
-            update: { quantity: { increment: item.baseQuantity } },
-            create: { godownId: warehouseId, productId: item.productId, quantity: item.baseQuantity },
-          })] : []),
-          // currentStock is nullable with no default — a plain increment
-          // silently no-ops when it's NULL, so COALESCE it first (see the
-          // matching comment in purchases/route.ts POST).
-          tx.$executeRaw`UPDATE products SET current_stock = COALESCE(current_stock, 0) + ${item.baseQuantity} WHERE id = ${item.productId}::uuid AND shop_id = ${auth!.shop.id}::uuid`,
-          // Keep the product's cost price in sync with the latest purchase
-          // price so the Products section always reflects current procurement cost.
-          tx.product.updateMany({
-            where: { id: item.productId, shopId: auth!.shop.id },
-            data: { costPrice: item.baseCost },
-          }),
-        ]),
         tx.supplier.update({
           where: { id: supplierId, shopId: auth!.shop.id },
           data: { balance: { increment: totalCost - finalAmountPaid } },
@@ -230,11 +248,25 @@ export async function PATCH(req: Request, { params }: Ctx) {
       ].filter(Boolean));
 
       return { invoice: updatedInvoice, oldInvoice: old };
-    }, { timeout: 15000, maxWait: 10000 });
+    }, { timeout: 30000, maxWait: 15000 });
 
     try {
       await cleanupPurchaseLedgerAndBatches(prisma, auth.shop.id, oldInvoice);
     } catch (e) { console.error('Purchase ledger/batch cleanup failed:', e); }
+
+    // Keep product cost price in sync with the latest purchase price.
+    // Done after the transaction (best-effort, like variant stock) so it never
+    // contributes to the transaction's runtime and a failure never rolls back
+    // the purchase edit itself.
+    try {
+      const costByProduct = new Map<string, number>();
+      for (const item of processedItems) costByProduct.set(item.productId, item.baseCost);
+      await Promise.all(
+        [...costByProduct.entries()].map(([productId, costPrice]) =>
+          prisma.product.updateMany({ where: { id: productId, shopId: auth!.shop.id }, data: { costPrice } }),
+        ),
+      );
+    } catch (e) { console.error('Cost price update after purchase edit failed:', e); }
 
     // Hamali / Freight (Bada Udyog): best-effort, same as the broker commission on POST — a figure
     // left blank at import time (or caught wrong afterwards) can be fixed here without touching the

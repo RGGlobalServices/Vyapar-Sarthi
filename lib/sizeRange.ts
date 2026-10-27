@@ -58,7 +58,7 @@ const FREE_SIZE_RE = /^(free\s*size|freesize|one\s*size|onesize|os|fs|free)$/i;
 
 // ─── Hint type ───────────────────────────────────────────────────────────────
 
-export type SizeHint = 'shoes' | 'apparel' | 'kids' | 'saree' | 'fabric' | 'auto';
+export type SizeHint = 'shoes' | 'apparel' | 'kids' | 'saree' | 'fabric' | 'underwear' | 'auto';
 
 // ─── Range separator splitter ─────────────────────────────────────────────────
 
@@ -98,17 +98,24 @@ function splitNumericSize(raw: string): { prefix: string; num: number | null; su
  *  1. Explicit hint always wins.
  *  2. Both endpoints ≤ 16 → shoes/kids-footwear → step 1.
  *  3. Both endpoints even AND in 10–54 → apparel (shirt/blouse/trouser) → step 2.
- *  4. Default → step 1.
+ *  4. Both endpoints multiples of 5 AND in 60–120 → underwear/innerwear cm → step 5.
+ *  5. Default → step 1.
  */
 function detectNumericStep(start: number, end: number, hint?: SizeHint): number {
   if (hint === 'shoes') return 1;
   if (hint === 'apparel' || hint === 'kids') {
     return (start % 2 === 0 && end % 2 === 0) ? 2 : 1;
   }
+  // Underwear/innerwear hint: waist/chest in cm (70,75,80,85,90,95,100) → step 5
+  if (hint === 'underwear') {
+    return (start % 5 === 0 && end % 5 === 0) ? 5 : 1;
+  }
   // Shoe heuristic: India/UK sizes 1–13, kids shoe 1–8, with a little headroom
   if (start >= 1 && end <= 16) return 1;
   // Apparel heuristic: even numbers in shirt/blouse/trouser range
   if (start % 2 === 0 && end % 2 === 0 && start >= 10 && end <= 54) return 2;
+  // Underwear/innerwear cm auto-heuristic: 70–100 waist circumference (step 5)
+  if (start % 5 === 0 && end % 5 === 0 && start >= 60 && end <= 120) return 5;
   return 1;
 }
 
@@ -150,8 +157,22 @@ export function parseSizeRange(
   if (opts?.hint === 'saree' || opts?.hint === 'fabric') return [trimmed];
 
   // ── Textile dimension (36X40 = one size label, not a range) ──────────────
-  if (opts?.dimensions && /^\d+(?:\.\d+)?\s*[*xX]\s*\d+(?:\.\d+)?$/.test(trimmed)) {
-    return [trimmed.replace(/\s+/g, '').replace('*', 'X').toUpperCase()];
+  // Only suppress expansion when BOTH numbers are ≥ 20 — that covers real
+  // fabric dimensions (36X40, 22X32, 20X30 etc). Sizes below 20 such as
+  // "16X20" are kids'/apparel size ranges that SHOULD expand (→ 16, 18, 20).
+  // Underwear hint is excluded: "70*90" is a waist-cm range, not a dimension.
+  // Auto-heuristic exclusion: if both numbers ≥ 60 AND multiples of 5, treat
+  // as underwear/innerwear cm range even without an explicit hint (70*90,
+  // 75*95 etc.) — real fabric dimensions in this range would use the 'fabric'
+  // hint from the product name keywords ("meter", "metre", "कापड" etc.).
+  if (opts?.dimensions && opts?.hint !== 'underwear' && /^\d+(?:\.\d+)?\s*[*xX]\s*\d+(?:\.\d+)?$/.test(trimmed)) {
+    const halves = trimmed.split(/[*xX]/i);
+    const n1 = parseFloat(halves[0].trim());
+    const n2 = parseFloat(halves[halves.length - 1].trim());
+    const likelyUnderwearCm = n1 >= 60 && n2 >= 60 && n1 % 5 === 0 && n2 % 5 === 0;
+    if (!isNaN(n1) && !isNaN(n2) && n1 >= 20 && n2 >= 20 && !likelyUnderwearCm) {
+      return [trimmed.replace(/\s+/g, '').replace('*', 'X').toUpperCase()];
+    }
   }
 
   const pair = splitRange(trimmed);

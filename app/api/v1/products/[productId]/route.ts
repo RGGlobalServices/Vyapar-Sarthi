@@ -162,6 +162,29 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
   }
 });
 
+// Lightweight PATCH for spreadsheet-style inline cell edits.
+// Only touches the specific fields sent — no variant renormalization needed.
+export const PATCH = handle<Ctx>(async (req, { params }) => {
+  const { productId } = await params;
+  const { shop } = await requireShop(req);
+  const b = await readBody(req);
+
+  const product = await prisma.product.findFirst({ where: { id: productId, shopId: shop.id } });
+  if (!product) throw new ApiError(404, 'Product not found');
+
+  const updateData: Record<string, unknown> = {};
+  if (b.mrp !== undefined) updateData.mrp = Math.max(0, Number(b.mrp) || 0);
+  if (b.sellingPrice !== undefined) updateData.sellingPrice = Math.max(0, Number(b.sellingPrice) || 0);
+  if (b.costPrice !== undefined) updateData.costPrice = Math.max(0, Number(b.costPrice) || 0);
+  if (b.minStock !== undefined) updateData.minStock = Math.max(0, Number(b.minStock) || 0);
+  if (b.location !== undefined) updateData.location = String(b.location).trim();
+
+  if (Object.keys(updateData).length === 0) throw new ApiError(400, 'No fields to update');
+
+  const updated = await prisma.product.update({ where: { id: productId }, data: updateData });
+  return json(updated);
+});
+
 export const DELETE = handle<Ctx>(async (req, { params }) => {
   const { productId } = await params;
   const { shop, user } = await requireShop(req);

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
+import { TableSkeleton } from '@/components/ui/skeleton';
 import {
   Search, Loader2, Phone, X, Plus, Mail, MapPin, Truck,
   IndianRupee, TrendingUp, Wallet, AlertCircle, Calendar,
@@ -366,9 +367,7 @@ export default function SuppliersPage() {
       {/* Supplier list */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         {loading ? (
-          <div className="flex justify-center p-16">
-            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-          </div>
+          <div className="p-4"><TableSkeleton rows={6} cols={4} /></div>
         ) : suppliers.length === 0 ? (
           <div className="py-16 text-center">
             <Truck size={40} className="text-slate-300 dark:text-slate-700 mx-auto mb-3" />
@@ -1155,6 +1154,7 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
   const t = useTranslations('Suppliers');
   const locale = useLocale();
   const { profile } = useBusinessStore();
+  const isMill = isMillBillingPackage(profile?.packageType);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState({ from: '', to: '' });
@@ -1555,10 +1555,10 @@ function SupplierDetail({ supplierId, onClose, onChanged }: {
           />
         )}
 
-        {/* Tab switcher — history / deliveries / slips */}
+        {/* Tab switcher — history / deliveries / slips (deliveries+slips are mill-only) */}
         <div className="flex gap-1 px-4 pt-3 pb-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
-          {(['history', 'deliveries', 'slips'] as const).map(tab => (
-            <button key={tab} onClick={() => setSupplierTab(tab)}
+          {(isMill ? ['history', 'deliveries', 'slips'] : ['history']).map((tab) => (
+            <button key={tab} onClick={() => setSupplierTab(tab as 'history' | 'deliveries' | 'slips')}
               className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors border-b-2 -mb-px ${
                 supplierTab === tab
                   ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'

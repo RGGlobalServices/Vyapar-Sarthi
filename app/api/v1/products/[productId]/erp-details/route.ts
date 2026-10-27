@@ -21,98 +21,91 @@ export const GET = handle<Ctx>(async (req, { params }) => {
 
   const isMill = shop.businessType === 'millprocessing';
 
-  const [batches, godownProducts, movements, millData] = await Promise.all([
-    // Batches
-    prisma.batch.findMany({
-      where: { productId, shopId: shop.id },
-      orderBy: { createdAt: 'desc' }
-    }),
+  // Run queries sequentially in two phases to avoid exhausting PgBouncer's
+  // connection pool (connection_limit=6). A Promise.all with 4-6 concurrent
+  // queries against PgBouncer's transaction-mode pool causes queuing that
+  // pushes the total time past the 12s AbortSignal timeout.
 
-    // Warehouses
-    prisma.godownProduct.findMany({
-      where: { productId, godown: { shopId: shop.id }, quantity: { gt: 0 } },
-      include: { godown: { select: { id: true, name: true } } }
-    }).then(res => res.map(gp => ({
-      quantity: gp.quantity,
-      name: gp.godown.name,
-      id: gp.godown.id
-    }))),
+  // Phase 1: lightweight indexed lookups
+  const batches = await prisma.batch.findMany({
+    where: { productId, shopId: shop.id },
+    orderBy: { createdAt: 'desc' }
+  });
 
-    // Movements
-    prisma.stockMovement.findMany({
-      where: { productId, shopId: shop.id },
+  const godownRaw = await prisma.godownProduct.findMany({
+    where: { productId, godown: { shopId: shop.id }, quantity: { gt: 0 } },
+    include: { godown: { select: { id: true, name: true } } }
+  });
+  const godownProducts = godownRaw.map(gp => ({
+    quantity: gp.quantity,
+    name: gp.godown.name,
+    id: gp.godown.id
+  }));
+
+  // Phase 2: movements (may need a secondary warehouse-name lookup)
+  const rawMovements = await prisma.stockMovement.findMany({
+    where: { productId, shopId: shop.id },
+    orderBy: { createdAt: 'desc' },
+    take: 20
+  });
+  const warehouseIds = [...new Set(rawMovements.map(m => m.warehouseId).filter(Boolean))] as string[];
+  let warehouseNames: Record<string, string> = {};
+  if (warehouseIds.length > 0) {
+    const gods = await prisma.godown.findMany({ where: { id: { in: warehouseIds }, shopId: shop.id } });
+    warehouseNames = gods.reduce((acc: any, g: any) => ({ ...acc, [g.id]: g.name }), {});
+  }
+  const movements = rawMovements.map(m => ({
+    id: m.id,
+    type: m.type,
+    quantity: m.quantity,
+    created_at: m.createdAt,
+    warehouse_name: m.warehouseId ? warehouseNames[m.warehouseId] || null : null
+  }));
+
+  // Phase 3 (mill only): production batches + FG lots
+  let millData: { productionBatches: any[]; fgLots: any[] } | null = null;
+  if (isMill) {
+    const productionBatches = await prisma.productionBatch.findMany({
+      where: { outputProductId: productId, shopId: shop.id },
+      include: {
+        rawLot: { include: { supplier: true } },
+        inputLots: { include: { rawMaterialLot: { include: { supplier: true } } } },
+        finishedGoodsLots: {
+          where: { productId },
+          include: { godown: { select: { id: true, name: true } } }
+        },
+        byProducts: { select: { id: true, name: true, quantityKg: true } }
+      },
       orderBy: { createdAt: 'desc' },
       take: 20
-    }).then(async (movements) => {
-      const warehouseIds = [...new Set(movements.map(m => m.warehouseId).filter(Boolean))] as string[];
-      let warehouses: Record<string, string> = {};
-      if (warehouseIds.length > 0) {
-        const gods = await prisma.godown.findMany({
-          where: { id: { in: warehouseIds }, shopId: shop.id }
-        });
-        warehouses = gods.reduce((acc: any, g: any) => ({ ...acc, [g.id]: g.name }), {});
-      }
-      return movements.map(m => ({
-        id: m.id,
-        type: m.type,
-        quantity: m.quantity,
-        created_at: m.createdAt,
-        warehouse_name: m.warehouseId ? warehouses[m.warehouseId] || null : null
-      }));
-    }),
-
-    // Mill-specific: production batches + FG lots
-    isMill ? Promise.all([
-      // Production batches where this product is the output
-      prisma.productionBatch.findMany({
-        where: { outputProductId: productId, shopId: shop.id },
-        include: {
-          rawLot: { include: { supplier: true } },
-          inputLots: {
-            include: {
-              rawMaterialLot: {
-                include: { supplier: true }
-              }
-            }
-          },
-          finishedGoodsLots: {
-            where: { productId },
-            include: { godown: { select: { id: true, name: true } } }
-          },
-          byProducts: { select: { id: true, name: true, quantityKg: true } }
+    });
+    const fgLots = await prisma.finishedGoodsLot.findMany({
+      where: { productId, shopId: shop.id },
+      include: {
+        godown: { select: { id: true, name: true } },
+        batch: {
+          select: {
+            id: true, batchNumber: true, inputKg: true, outputKg: true,
+            startedAt: true, closedAt: true, status: true,
+            rawLot: { include: { supplier: true } }
+          }
         },
-        orderBy: { createdAt: 'desc' },
-        take: 20
-      }),
-      // FG lots for this product
-      prisma.finishedGoodsLot.findMany({
-        where: { productId, shopId: shop.id },
-        include: {
-          godown: { select: { id: true, name: true } },
-          batch: {
-            select: {
-              id: true, batchNumber: true, inputKg: true, outputKg: true,
-              startedAt: true, closedAt: true, status: true,
-              rawLot: { include: { supplier: true } }
-            }
-          },
-          challanItems: {
-            include: {
-              challan: {
-                select: {
-                  id: true, challanNumber: true, customerName: true,
-                  customerId: true, createdAt: true
-                }
+        challanItems: {
+          include: {
+            challan: {
+              select: {
+                id: true, challanNumber: true, customerName: true,
+                customerId: true, createdAt: true
               }
             }
           }
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 50
-      })
-    ]).then(([productionBatches, fgLots]) => ({ productionBatches, fgLots }))
-    : Promise.resolve(null)
-  ]);
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    millData = { productionBatches, fgLots };
+  }
 
   const totalStock = product.currentStock || 0;
   const stockValue = totalStock * (product.wholesaleCost || product.sellingPrice || 0);

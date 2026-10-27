@@ -2320,7 +2320,10 @@
     "printBarcodeLabels": "बारकोड लेबल्स प्रिंट करा ({n})",
     "startAnotherImport": "आणखी एक आयात सुरू करा",
     "cancelConfirm": "रद्द करायचे? स्कॅन केलेले {n} ओळींचे डेटा जाईल.",
-    "loadingModule": "लोड होत आहे..."
+    "loadingModule": "लोड होत आहे...",
+    "destinationCol": "गंतव्य",
+    "destMill": "मिल साठा",
+    "destDirectSale": "थेट विक्रीसाठी"
   },
   "Billing": {
     "title": "बिलिंग",
@@ -2494,6 +2497,11 @@
     "changeLot": "लॉट बदला",
     "lotPickerHint": "सर्वात जुना लॉट शिफारसीय आहे — तो आधी विका जेणेकरून जुना साठा राहणार नाही. नफा प्रत्येक लॉटच्या खरेदी किमतीवरून मोजला जातो.",
     "exceedsAvailable": "उपलब्ध पेक्षा जास्त ({available} {unit})",
+    "billFromPool": "एकूण साठ्यातून बिल करा",
+    "totalAvailable": "{qty} {unit} एकूण",
+    "lotsReady": "{n} लॉट तयार",
+    "lotsReadyPlural": "{n} लॉट तयार",
+    "enterQtyToSell": "विकण्याचे प्रमाण टाका (kg)",
     "barcode": "बारकोड",
     "barcodeHintRegisters": "हे एक खरे उत्पाद म्हणून नोंदवते",
     "barcodeHintOptional": "पर्यायी — एकवेळच्या कार्ट आयटमसाठी रिकामे ठेवा",
@@ -2520,6 +2528,7 @@
     "mrp": "एमआरपी:",
     "offerSavings": "ऑफर सवलत:",
     "discount": "सवलत:",
+    "totalQty": "एकूण प्रमाण:",
     "total": "एकूण",
     "emiDetails": "── ईएमआय तपशील ──",
     "downPayment": "डाउन पेमेंट:",
@@ -3677,6 +3686,8 @@
     "purchaseDate": "खरेदीची तारीख",
     "itemsLabel": "वस्तू",
     "productLabel": "उत्पादन",
+    "addNewProduct": "नवीन उत्पादन जोडा",
+    "enterProductName": "उत्पादन नाव टाका...",
     "qty": "प्रमाण",
     "unitCost": "एकक किंमत",
     "batchOptional": "बॅच (पर्यायी)",
@@ -3973,7 +3984,13 @@
     "recentMovements": "अलीकडील घडामोडी",
     "noRecentMovements": "कोणत्याही अलीकडील घडामोडी नाहीत",
     "delete": "हटवा",
-    "confirmDelete": "तुम्हाला खात्री आहे की तुम्ही हे उत्पादन हटवू इच्छिता?"
+    "confirmDelete": "तुम्हाला खात्री आहे की तुम्ही हे उत्पादन हटवू इच्छिता?",
+    "mrp": "एमआरपी",
+    "receiveStock": "साठा मिळवा",
+    "newLot": "नवीन लॉट",
+    "clone": "प्रत तयार करा",
+    "mlWiseStock": "ML-निहाय साठा",
+    "typeLabel": "प्रकार"
   },
   "AlertDetails": {
     "loading": "अलर्ट तपशील लोड होत आहे…",

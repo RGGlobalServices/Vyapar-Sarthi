@@ -323,6 +323,7 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
 
           {/* ── Bill Summary — table layout for reliable PDF rendering ── */}
           {(() => {
+            const totalQty = goodsItems.reduce((s, i) => s + (i.quantity || 0), 0);
             const mrpTotal = goodsItems.reduce((s, i) => s + (Number((i as any).mrp) || i.price) * i.quantity, 0);
             const offerSavings = Math.round((mrpTotal - subtotal) * 100) / 100;
             const hasMrpSavings = offerSavings >= 0.5;
@@ -379,6 +380,13 @@ export const ThermalInvoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>
                       </td>
                     </tr>
                   ))}
+                  {/* Total Qty row */}
+                  {totalQty > 0 && (
+                    <tr style={{ color: '#444' }}>
+                      <td style={tdL}>{t('totalQty') || 'Total Qty:'}</td>
+                      <td style={tdR}>{totalQty % 1 === 0 ? totalQty : totalQty.toFixed(2)}</td>
+                    </tr>
+                  )}
                   {/* TOTAL row — bold, large, with top border */}
                   <tr style={{ borderTop: '2px solid #000', fontWeight: 900, fontSize: is58mm ? '14px' : '16px' }}>
                     <td style={{ ...tdL, paddingTop: '5px', paddingBottom: '5px' }}>{t('total') || 'TOTAL'}</td>
