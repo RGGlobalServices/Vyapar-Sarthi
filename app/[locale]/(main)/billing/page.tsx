@@ -1362,39 +1362,7 @@ function StandardBillingUI() {
             />
             {searchResults.length > 0 && (
               <div className="absolute top-full left-0 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto">
-                {searchResults.map((product) => (lotsByProduct[String(product.id)]?.length > 1) ? (
-                  <div key={product.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
-                    <div className="px-4 pt-2.5 pb-1">
-                      <p className="font-bold text-slate-900 dark:text-slate-200">{product.name}</p>
-                      <p className="text-[11px] text-slate-500">{product.category} · {lotsByProduct[String(product.id)].length} lots in stock — pick the lot to sell</p>
-                    </div>
-                    {lotsByProduct[String(product.id)].map((lot: any, idx: number) => {
-                      const lotPrice = Number(lot.sellingPrice) > 0 ? Number(lot.sellingPrice) : (Number(product.sellingPrice ?? product.selling_price) || 0);
-                      return (
-                        <button
-                          key={lot.id}
-                          onClick={() => addToCart(product, undefined, false, { id: lot.id, batchNumber: lot.batchNumber || makeLotLabel(lot).replace(/^Lot /, ''), costPrice: lot.costPrice, sellingPrice: lot.sellingPrice })}
-                          className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex justify-between items-center gap-3"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
-                              {makeLotLabel(lot)}
-                              {idx === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-900 dark:bg-white text-white dark:text-slate-900">Old · sell first</span>}
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              {lot.purchaseDate ? `bought ${new Date(lot.purchaseDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-                              {lot.expiryDate ? ` · exp ${new Date(lot.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-bold text-emerald-500">₹{lotPrice.toLocaleString('en-IN')}</p>
-                            <p className="text-[10px] font-bold text-slate-500">{lot.quantity} left</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
+                {searchResults.map((product) => (
                   <button
                     key={product.id}
                     onClick={() => { addToCart(product); checkFifoHintOnAdd(product); }}
