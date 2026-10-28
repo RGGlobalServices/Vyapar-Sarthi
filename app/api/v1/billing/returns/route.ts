@@ -5,7 +5,7 @@ import { splitAcrossDraws } from '@/lib/lots';
 import { openVariantStores, adjustVariantStores, closeVariantStores } from '@/lib/variants';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
-import { toPaise } from '@/lib/server/moneyValidation';
+import { toPaise, round2 } from '@/lib/server/moneyValidation';
 import { planReturn, parsePriorReturns, splitRefund } from '@/lib/server/refunds';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 
@@ -57,10 +57,12 @@ export const POST = handle(async (req) => {
   const body = await readBody(req) as {
     bill_id: string;
     items: ReturnItemInput[];
-    cash_refund?: number;   // shopkeeper-chosen cash amount (≤ auto cashRefunded)
+    udhar_clear?: number;   // shopkeeper-chosen udhar-clear amount (≤ auto udharCleared)
+    cash_refund?: number;   // shopkeeper-chosen cash amount (≤ what's left after udhar_clear)
     credit_to_add?: number; // remainder to park as customer credit
   };
   const { bill_id, items } = body;
+  const shopkeeperUdharClear = typeof body.udhar_clear === 'number' && isFinite(body.udhar_clear) ? body.udhar_clear : null;
   const shopkeeperCashRefund = typeof body.cash_refund === 'number' && isFinite(body.cash_refund) ? body.cash_refund : null;
   const shopkeeperCreditToAdd = typeof body.credit_to_add === 'number' && isFinite(body.credit_to_add) ? body.credit_to_add : null;
 
@@ -187,11 +189,20 @@ export const POST = handle(async (req) => {
     const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
     const autoSplit = splitRefund(totalRefund, outstandingOnThisBill, customerDue);
 
-    // If the shopkeeper overrode the cash amount (editable input on the UI),
-    // honour it — but never let cash exceed what the auto-split would pay out
-    // (can't refund more cash than the return is worth) and never negative.
-    const udharCleared = autoSplit.udharCleared;
-    const maxCash = autoSplit.cashRefunded;
+    // If the shopkeeper overrode how much udhar to clear (editable input on
+    // the UI — e.g. the party disputes part of the amount), honour it, but
+    // never above what the auto-split would clear (can't wipe out more udhar
+    // than this return is actually worth, or than the party owes) and never
+    // negative.
+    const maxUdhar = autoSplit.udharCleared;
+    const udharCleared = shopkeeperUdharClear !== null
+      ? Math.max(0, Math.min(Math.round(shopkeeperUdharClear * 100) / 100, maxUdhar))
+      : maxUdhar;
+    // Whatever the udhar portion didn't use goes back into the cash pool —
+    // reducing udhar-clear by ₹X means ₹X more is available to refund as cash.
+    const maxCash = round2(totalRefund - udharCleared);
+    // If the shopkeeper overrode the cash amount too, honour it — capped by
+    // what's left after the (possibly overridden) udhar portion.
     const cashRefunded = shopkeeperCashRefund !== null
       ? Math.max(0, Math.min(Math.round(shopkeeperCashRefund * 100) / 100, maxCash))
       : maxCash;

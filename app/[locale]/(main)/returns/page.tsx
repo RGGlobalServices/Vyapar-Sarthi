@@ -134,6 +134,7 @@ export default function ReturnsPage() {
   const [settlementMethod, setSettlementMethod] = useState<'Cash' | 'UPI' | 'Card' | 'Udhar' | 'Mix'>('Cash');
   const [mixAmounts, setMixAmounts] = useState<{ cash: number; upi: number; card: number }>({ cash: 0, upi: 0, card: 0 });
   const [cashRefundOverride, setCashRefundOverride] = useState<number | null>(null);
+  const [udharClearOverride, setUdharClearOverride] = useState<number | null>(null);
 
   async function loadExchangeProducts(): Promise<ExchangeProductRow[]> {
     if (exchangeProducts) return exchangeProducts;
@@ -281,6 +282,7 @@ export default function ReturnsPage() {
 
       setBill(res.data);
       setCashRefundOverride(null);
+      setUdharClearOverride(null);
       // Initialize returnable items (quantity 0 initially)
       if (res.data.items) {
         const availableItems = res.data.items
@@ -325,6 +327,7 @@ export default function ReturnsPage() {
           name: item.name,
           price: item.price_per_unit
         })),
+        udhar_clear: willClearUdhar,
         cash_refund: actualCashRefund,
         credit_to_add: creditToAdd,
       });
@@ -333,6 +336,7 @@ export default function ReturnsPage() {
       setReturnItems([]);
       setSearchQuery('');
       setCashRefundOverride(null);
+      setUdharClearOverride(null);
       fetchHistory(); // refresh return history in-page
       // Every screen that reads customer.totalDue, product stock, dashboard
       // KPIs or the cashbook has just been changed by this return — nudge
@@ -352,6 +356,7 @@ export default function ReturnsPage() {
     }
   };
 
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   const returnValueForExchange = returnItems.reduce((acc, it) => acc + it.returnQty * it.price_per_unit, 0);
   const exchangeValueTotal = exchangeLines.reduce((acc, l) => acc + l.qty * l.price, 0);
 
@@ -364,14 +369,25 @@ export default function ReturnsPage() {
   const billUpiPaid = Number(billPd?.upi) || (bill?.payment_type === 'UPI' ? billPaidAmt : 0);
   const billCardPaid = Number(billPd?.card) || (bill?.payment_type === 'Card' ? billPaidAmt : 0);
 
-  // Simple return: udhar clears first; remaining is cash refund (editable by shopkeeper)
+  // Simple return: udhar clears first (shopkeeper can clear less, e.g. if the
+  // party disputes part of it), then cash — both editable. Whatever is left
+  // after both (shopkeeper chose to hand back less cash than available) is
+  // parked as store credit, same as the cash-only override already did.
   const totalRefund = returnValueForExchange;
-  const willClearUdhar = Math.min(totalRefund, billUdharAmt);
-  const willRefundCash = totalRefund - willClearUdhar;
+  const autoWillClearUdhar = Math.min(totalRefund, billUdharAmt);
+  const willClearUdhar = udharClearOverride !== null
+    ? Math.max(0, Math.min(udharClearOverride, autoWillClearUdhar))
+    : autoWillClearUdhar;
+  // What's left of this return's value after the udhar portion — the pool
+  // the cash input (and any leftover credit) is drawn from.
+  const remainingAfterUdhar = Math.max(0, round2(totalRefund - willClearUdhar));
+  const willRefundCash = remainingAfterUdhar;
   const actualCashRefund = cashRefundOverride !== null
-    ? Math.max(0, cashRefundOverride)
+    ? Math.max(0, Math.min(cashRefundOverride, remainingAfterUdhar))
     : willRefundCash;
-  const creditToAdd = Math.max(0, willRefundCash - actualCashRefund);
+  const creditToAdd = Math.max(0, round2(remainingAfterUdhar - actualCashRefund));
+  // Party's remaining udhar on this bill once this return settles.
+  const remainingUdharAfter = Math.max(0, round2(billUdharAmt - willClearUdhar));
 
   // Exchange: return credit = only the portion the customer actually PAID
   // (udhar debt is cleared separately but must not count as exchange credit —
@@ -554,26 +570,51 @@ export default function ReturnsPage() {
                     )}
                   </div>
 
-                  {/* Live refund plan — udhar clears first, remaining cash is editable */}
+                  {/* Live refund plan — udhar-clear and cash are both editable; leftover (if either is reduced) becomes store credit */}
                   {!exchangeMode && totalRefund > 0 && (
                     <div className="rounded-lg border border-emerald-300 dark:border-emerald-700 p-2.5 bg-emerald-50 dark:bg-emerald-500/10 space-y-1.5">
                       <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">{t('thisReturnWillLabel') || 'This return will'}</p>
-                      {willClearUdhar > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-emerald-800 dark:text-emerald-300">{t('clearFromUdhar') || "↓ Clear from party's udhar"}</span>
-                          <span className="font-black text-emerald-700 dark:text-emerald-400">₹{willClearUdhar.toLocaleString('en-IN')}</span>
-                        </div>
+                      {autoWillClearUdhar > 0 && (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-800 dark:text-emerald-300 text-xs shrink-0">{t('clearFromUdhar') || "↓ Clear from party's udhar"}</span>
+                            <div className="flex items-center gap-1 ml-auto">
+                              <span className="text-emerald-700 dark:text-emerald-400 font-black text-xs shrink-0">₹</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={autoWillClearUdhar}
+                                value={willClearUdhar}
+                                onChange={e => {
+                                  const v = parseFloat(e.target.value);
+                                  setUdharClearOverride(isNaN(v) ? 0 : Math.max(0, v));
+                                }}
+                                className="w-24 text-right text-xs font-black text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-800 border border-emerald-400 dark:border-emerald-600 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[11px] pl-1">
+                            <span className="text-slate-500 dark:text-slate-400">{t('udharRemainingAfter') || 'Udhar remaining after this'}</span>
+                            <span className="font-bold text-orange-600 dark:text-orange-400">₹{remainingUdharAfter.toLocaleString('en-IN')}</span>
+                          </div>
+                        </>
                       )}
-                      {willClearUdhar > 0 && willRefundCash === 0 && (
+                      {willClearUdhar > 0 && remainingAfterUdhar === 0 && (
                         <div className="flex justify-between text-xs">
                           <span className="text-slate-500 dark:text-slate-400">💵 {t('cashRefundZero') || 'Cash refund to customer'}</span>
                           <span className="font-black text-slate-400 dark:text-slate-500">₹0</span>
                         </div>
                       )}
-                      {willRefundCash > 0 && (
+                      {actualCashRefund > 0 && (
                         <div className="flex justify-between text-xs">
                           <span className="text-emerald-800 dark:text-emerald-300">💵 {t('refundCashOut') || 'Refund to customer (cash out)'}</span>
                           <span className="font-black text-emerald-700 dark:text-emerald-400">₹{actualCashRefund.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {creditToAdd > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-indigo-700 dark:text-indigo-400">💳 {t('addToCustomerCredit') || 'Add to credit'}</span>
+                          <span className="font-black text-indigo-700 dark:text-indigo-400">₹{creditToAdd.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                     </div>
@@ -707,17 +748,30 @@ export default function ReturnsPage() {
                         />
                         {productSearch.trim() && !pickedProduct && (
                           <div className="absolute z-10 mt-1 w-full max-h-52 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg">
-                            {(exchangeProducts || []).filter(p => p.name?.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 20).map(p => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => { setPickedProduct(p); setPickedVariant(''); setProductSearch(p.name); }}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between gap-2"
-                              >
-                                <span className="text-slate-800 dark:text-slate-200 truncate">{p.name}</span>
-                                <span className="text-xs text-emerald-500 font-bold shrink-0">₹{p.price.toLocaleString('en-IN')}</span>
-                              </button>
-                            ))}
+                            {(exchangeProducts || []).filter(p => p.name?.toLowerCase().includes(productSearch.trim().toLowerCase())).slice(0, 20).map(p => {
+                              const outOfStock = p.variants.length === 0 && p.currentStock !== null && p.currentStock <= 0;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => { setPickedProduct(p); setPickedVariant(''); setProductSearch(p.name); }}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between gap-2"
+                                >
+                                  <span className="min-w-0 flex-1">
+                                    <span className="text-slate-800 dark:text-slate-200 truncate block">{p.name}</span>
+                                    {p.variants.length > 0 ? (
+                                      <span className="text-[10px] text-slate-500">{t('variantsCount', { n: p.variants.length }) || `${p.variants.length} variants`}</span>
+                                    ) : (
+                                      <span className={cn('text-[10px] font-semibold', outOfStock ? 'text-red-500' : 'text-slate-500')}>
+                                        {p.currentStock !== null ? `${t('stockLabel') || 'Stock'}: ${p.currentStock}` : ''}
+                                        {outOfStock ? ` · ${t('outOfStock') || 'Out of stock'}` : ''}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs text-emerald-500 font-bold shrink-0">₹{p.price.toLocaleString('en-IN')}</span>
+                                </button>
+                              );
+                            })}
                             {(exchangeProducts || []).filter(p => p.name?.toLowerCase().includes(productSearch.trim().toLowerCase())).length === 0 && (
                               <p className="px-3 py-2 text-xs text-slate-500">{t('noProductsFound') || 'No products found'}</p>
                             )}
@@ -732,7 +786,9 @@ export default function ReturnsPage() {
                         >
                           <option value="">{t('selectVariant') || 'Select variant'}</option>
                           {pickedProduct.variants.map(v => (
-                            <option key={v.key} value={v.key}>{v.key}{v.stock !== null ? ` (${v.stock})` : ''}</option>
+                            <option key={v.key} value={v.key} disabled={v.stock !== null && v.stock <= 0}>
+                              {v.key}{v.stock !== null ? ` (${v.stock})` : ''}{v.stock !== null && v.stock <= 0 ? ` — ${t('outOfStock') || 'Out of stock'}` : ''}
+                            </option>
                           ))}
                         </select>
                       )}
@@ -745,6 +801,29 @@ export default function ReturnsPage() {
                         <Plus size={15} /> {t('addExchangeItem') || 'Add Item'}
                       </button>
                     </div>
+
+                    {/* Picked product's live details — same stock/price info the billing screen shows */}
+                    {pickedProduct && (() => {
+                      const variantOpt = pickedProduct.variants.find(v => v.key === pickedVariant) || null;
+                      const effStock = variantOpt ? variantOpt.stock : (pickedProduct.variants.length === 0 ? pickedProduct.currentStock : null);
+                      const effPrice = variantOpt?.price ?? pickedProduct.price;
+                      const isOut = effStock !== null && effStock <= 0;
+                      return (
+                        <div className="flex items-center justify-between gap-3 text-xs bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-2">
+                          <span className="text-slate-700 dark:text-slate-300 font-semibold truncate">
+                            {pickedProduct.name}{pickedVariant ? ` · ${pickedVariant}` : ''}
+                          </span>
+                          <span className="flex items-center gap-3 shrink-0">
+                            {effStock !== null && (
+                              <span className={cn('font-bold', isOut ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400')}>
+                                {isOut ? (t('outOfStock') || 'Out of stock') : `${effStock} ${t('inStock') || 'in stock'}`}
+                              </span>
+                            )}
+                            <span className="text-slate-500 font-bold">₹{effPrice.toLocaleString('en-IN')}</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Exchange line items */}
                     {exchangeLines.length === 0 ? (
@@ -955,6 +1034,9 @@ export default function ReturnsPage() {
                             ₹{actualCashRefund.toLocaleString('en-IN')}
                           </p>
                           <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">{t('plusUdharCleared') || '+ Udhar cleared:'} ₹{willClearUdhar.toLocaleString('en-IN')}</p>
+                          {creditToAdd > 0 && (
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">{t('addToCustomerCredit') || '💳 Add to credit:'} ₹{creditToAdd.toLocaleString('en-IN')}</p>
+                          )}
                         </>
                       ) : (
                         <>
