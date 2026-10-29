@@ -94,28 +94,15 @@ export const GET = handle(async (req) => {
         wholesaleCost: true,
         costPrice: true,
         isRawMaterial: true,
+        gstInclusive: true,
       },
       skip,
       take: limit,
       orderBy: { name: 'asc' }
     });
-    // gst_inclusive is a new column — the cached Prisma client may not know it
-    // yet, so fetch it via raw SQL and merge in rather than selecting it above.
-    let gstInclusiveMap = new Map<string, boolean>();
-    if (products.length > 0) {
-      try {
-        const ids = products.map(p => p.id);
-        const rows = await prisma.$queryRawUnsafe<{ id: string; gst_inclusive: boolean | null }[]>(
-          `SELECT id, gst_inclusive FROM products WHERE id = ANY($1::uuid[])`,
-          ids
-        );
-        for (const row of rows) gstInclusiveMap.set(row.id, row.gst_inclusive ?? false);
-      } catch { /* ignore if column doesn't exist yet */ }
-    }
-    const liteData = (allShopAccess
+    const liteData = allShopAccess
       ? products.map(p => ({ ...p, shopName: p.shopId ? shopNameById.get(p.shopId) : undefined, shopBusinessType: p.shopId ? shopBusinessTypeById.get(p.shopId) : undefined }))
-      : products
-    ).map(p => ({ ...p, gstInclusive: gstInclusiveMap.get(p.id as string) ?? false }));
+      : products;
     return json({ data: liteData, page, limit }, 200, {
       'Cache-Control': 'public, max-age=10, stale-while-revalidate=50'
     });
@@ -232,14 +219,14 @@ export const POST = handle(async (req) => {
         maxStock: b.maxStock ?? b.max_stock,
         wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
         conversionFactor: b.conversionFactor ?? b.conversion_factor,
+        // null (the default) = the shopkeeper never picked Including/Excluding
+        // GST — must stay null, not get forced to false, or the Edit modal's
+        // toggle falsely shows "Excluding" as already chosen.
+        gstInclusive: (b.gstInclusive ?? b.gst_inclusive) === null || (b.gstInclusive ?? b.gst_inclusive) === undefined
+          ? null
+          : Boolean(b.gstInclusive ?? b.gst_inclusive),
       },
     });
-    // gst_inclusive not in cached Prisma client — update via raw SQL
-    const gstInclusiveVal = b.gstInclusive ?? b.gst_inclusive ?? false;
-    await prisma.$executeRawUnsafe(
-      `UPDATE products SET gst_inclusive = $1 WHERE id = $2::uuid`,
-      Boolean(gstInclusiveVal), product.id
-    ).catch(() => {});
     // Record the opening stock as a stock-in movement so the Products/Stock lists
     // can surface a "+N newly added" badge (and for the audit trail).
     const openingQty = Number(product.currentStock) || 0;

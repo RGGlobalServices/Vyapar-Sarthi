@@ -741,20 +741,12 @@ export default function WholesaleProductsUI() {
       const payload = {
         ...form,
         barcode: form.barcode?.trim() || null,
-        // Never send `variants: []` for a non-variant-typed product: imported/older products can
-        // still carry variant rows, and an empty array wipes them. Omit the key so the server
-        // leaves them untouched (it clears only when the type is explicitly single/loose AND [] is sent).
-        variants: isVariantProduct ? effectiveVariants : undefined,
-        // `...form` above still carries whatever `currentStock` this product
-        // had when the modal opened (spread in from `handleEdit`) — nothing
-        // in this form edits it directly since a variant product's stock
-        // lives entirely on its rows. Recompute it from the (already-pruned,
-        // see handleGridColorsChange) variant rows so removing a colour/size
-        // actually reduces the rolled-up total sent to the server, instead
-        // of silently re-saving the pre-removal number. Single/non-variant
-        // products are untouched — their stock only ever changes via
-        // Receive Stock / Purchases, never this form.
-        ...(isVariantProduct ? { currentStock: effectiveVariants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0) } : {}),
+        productType: form.productType || 'single',
+        // When not a variant product, explicitly send empty variants so the server does not auto-promote to variant
+        variants: isVariantProduct ? effectiveVariants : [],
+        currentStock: isVariantProduct
+          ? effectiveVariants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0)
+          : Number((form as any).currentStock ?? (form as any).stock ?? 0),
         // Only applies to the flat/non-per-variant cost price — firstVariant
         // (per-variant pricing) still wins below when it applies, since it's
         // spread in after this.

@@ -165,7 +165,8 @@ export function parseSizeRange(
   // as underwear/innerwear cm range even without an explicit hint (70*90,
   // 75*95 etc.) — real fabric dimensions in this range would use the 'fabric'
   // hint from the product name keywords ("meter", "metre", "कापड" etc.).
-  if (opts?.dimensions && opts?.hint !== 'underwear' && /^\d+(?:\.\d+)?\s*[*xX]\s*\d+(?:\.\d+)?$/.test(trimmed)) {
+  const isDimensionCandidate = opts?.dimensions !== false && opts?.hint !== 'underwear' && opts?.hint !== 'shoes';
+  if (isDimensionCandidate && /^\d+(?:\.\d+)?\s*[*xX]\s*\d+(?:\.\d+)?$/.test(trimmed)) {
     const halves = trimmed.split(/[*xX]/i);
     const n1 = parseFloat(halves[0].trim());
     const n2 = parseFloat(halves[halves.length - 1].trim());

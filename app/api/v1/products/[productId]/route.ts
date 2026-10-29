@@ -42,32 +42,53 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
     // only null/a real uuid is valid, so coerce the empty-string case.
     const uuidOrNull = (v: any) => (v === '' ? null : v);
 
-    // Same lesson for the Udyog variants[] array: trust the caller. The old
-    // merge replaced `quantity`/`stock` on every incoming variant with the
-    // pre-existing value (or 0 if the variant was new), so adding stock to
-    // a new colour+size row went through silently as a no-op — same
-    // "not-working" symptom the size_variants merge above caused.
-    const finalVariants = b.variants;
-
-    // Reconcile variants[] / size_variants / currentStock so all stay consistent.
-    // Whichever store the caller sent drives the other; when they send neither
-    // (or an empty array without asking for a non-variant type) existing
-    // variant data is left untouched instead of being wiped.
     const reqType = b.productType ?? b.product_type;
-    const clearingVariants = Array.isArray(b.variants) && b.variants.length === 0
-      && (reqType === 'single' || reqType === 'loose');
-    const nv = normalizeVariants({
-      variants: b.variants,
-      sizeVariants: finalSizeVariants,
-      existingVariants: product.variants,
-    });
+    const isExplicitSingleOrLoose = reqType === 'single' || reqType === 'loose';
 
-    // If the caller changed currentStock via product-edit, emit a matching
-    // StockLog row so downstream views (Daily Register live re-baselining,
-    // Stock recent-activity feed, "+N added today" badge) can see it. Without
-    // this the product row updates silently and Receive/Close on the Daily
-    // Register never move.
-    const nextStockRaw = nv.hasVariants ? nv.currentStock : (b.current_stock ?? b.currentStock);
+    // Did the caller deliberately send new variants or size_variants?
+    const hasIncomingVariants = Array.isArray(b.variants);
+    const hasIncomingSizeVariants = b.size_variants !== undefined || b.sizeVariants !== undefined;
+    const variantsExplicitlyEdited = hasIncomingVariants || hasIncomingSizeVariants;
+
+    const clearingVariants = (hasIncomingVariants && b.variants.length === 0 && isExplicitSingleOrLoose)
+      || (hasIncomingSizeVariants && (!b.size_variants || b.size_variants === '{}') && isExplicitSingleOrLoose);
+
+    // A product is treated as a variant product ONLY if:
+    // 1) The caller explicitly specified reqType === 'variant', OR
+    // 2) The caller sent variant rows / size_variants to convert it, OR
+    // 3) The existing product was already 'variant' AND the caller did not set it to single/loose.
+    const isVariantProduct = !isExplicitSingleOrLoose && (
+      reqType === 'variant'
+      || (hasIncomingVariants && b.variants.length > 0)
+      || (hasIncomingSizeVariants && typeof b.size_variants === 'object' && Object.keys(b.size_variants || {}).length > 0)
+      || (product.productType === 'variant')
+    );
+
+    let nv: ReturnType<typeof normalizeVariants>;
+    if (isVariantProduct && variantsExplicitlyEdited && !clearingVariants) {
+      nv = normalizeVariants({
+        variants: b.variants,
+        sizeVariants: finalSizeVariants,
+        existingVariants: product.variants,
+      });
+    } else if (isVariantProduct && (b.current_stock === undefined && b.currentStock === undefined)) {
+      // Existing variant product where no flat stock was sent — preserve existing variant sum
+      nv = normalizeVariants({
+        variants: product.variants,
+        sizeVariants: product.size_variants,
+        existingVariants: product.variants,
+      });
+    } else {
+      // Single/loose product, or caller didn't provide variants: do not auto-synthesize variants
+      nv = { variants: [], sizeVariants: {}, sizeVariantsJson: null, currentStock: null, hasVariants: false };
+    }
+
+    // Flat stock provided by caller takes priority when product is single/loose or when variants were not explicitly edited:
+    const flatStockRaw = b.current_stock ?? b.currentStock;
+    const nextStockRaw = (isVariantProduct && nv.hasVariants && variantsExplicitlyEdited)
+      ? nv.currentStock
+      : (flatStockRaw !== undefined && flatStockRaw !== null && flatStockRaw !== '' ? flatStockRaw : (isVariantProduct && nv.hasVariants ? nv.currentStock : product.currentStock));
+
     const stockProvided = nextStockRaw !== undefined && nextStockRaw !== null && nextStockRaw !== '';
     const nextStock = stockProvided ? Number(nextStockRaw) : null;
     const prevStock = product.currentStock ?? 0;
@@ -75,10 +96,14 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       ? (nextStock as number) - prevStock
       : 0;
 
+    const resolvedProductType = isExplicitSingleOrLoose
+      ? reqType
+      : (isVariantProduct && nv.hasVariants ? 'variant' : (reqType || product.productType || 'single'));
+
     const updateData = {
       name: b.name,
       category: b.category,
-      currentStock: nv.hasVariants ? nv.currentStock : (b.current_stock ?? b.currentStock),
+      currentStock: nextStock,
       minStock: b.min_stock ?? b.minStock,
       mrp: b.mrp,
       sellingPrice: b.selling_price ?? b.sellingPrice,
@@ -100,12 +125,12 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       warranty_months: b.warranty_months ?? b.warrantyMonths,
       gender: b.gender,
       shade: b.shade,
-      size_variants: nv.hasVariants ? nv.sizeVariantsJson : (clearingVariants ? null : (Array.isArray(b.variants) ? undefined : finalSizeVariants)),
+      size_variants: isExplicitSingleOrLoose ? null : (isVariantProduct && nv.hasVariants ? nv.sizeVariantsJson : (clearingVariants ? null : undefined)),
       metadata: b.metadata !== undefined ? b.metadata : undefined,
-      variants: nv.hasVariants ? (nv.variants as any) : (clearingVariants ? [] : undefined),
+      variants: isExplicitSingleOrLoose ? [] : (isVariantProduct && nv.hasVariants ? (nv.variants as any) : (clearingVariants ? [] : undefined)),
       brand: b.brand,
       hsnCode: b.hsnCode ?? b.hsn_code,
-      productType: nv.hasVariants && (!reqType || reqType === 'single') && !(product as any).productType?.match(/loose/) ? 'variant' : reqType,
+      productType: resolvedProductType,
       gstPercent: b.gstPercent ?? b.gst_percent,
       // Mill classification + pack spec (Bada Udyog). All three nullable
       // so a shopkeeper can also *clear* a wrong pick by sending null.
@@ -128,6 +153,15 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       maxStock: b.maxStock ?? b.max_stock,
       conversionFactor: b.conversionFactor ?? b.conversion_factor,
       wholesaleMoq: b.wholesaleMoq ?? b.wholesale_moq,
+      // Whether the saved Selling Price is GST-inclusive or -exclusive.
+      // null = the shopkeeper never explicitly picked one (left it
+      // "unedited") — must stay null, not get forced to false/true, or the
+      // Edit modal's toggle falsely shows "Excluding" as chosen next time.
+      // Written here (not a separate post-transaction raw UPDATE) so it's
+      // atomic with the rest of the save and can never silently fail.
+      gstInclusive: (b.gstInclusive !== undefined || b.gst_inclusive !== undefined)
+        ? ((b.gstInclusive ?? b.gst_inclusive) === null ? null : Boolean(b.gstInclusive ?? b.gst_inclusive))
+        : undefined,
     };
 
     const ops: any[] = [
@@ -145,14 +179,6 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       }));
     }
     const [updated] = await prisma.$transaction(ops);
-    // gst_inclusive not in cached Prisma client — update via raw SQL
-    if (b.gstInclusive !== undefined || b.gst_inclusive !== undefined) {
-      const val = Boolean(b.gstInclusive ?? b.gst_inclusive);
-      await prisma.$executeRawUnsafe(
-        `UPDATE products SET gst_inclusive = $1 WHERE id = $2::uuid`,
-        val, productId
-      ).catch(() => {});
-    }
     return json(updated);
   } catch (error: any) {
     if (error.code === 'P2002' && error.meta?.target?.includes('barcode')) {

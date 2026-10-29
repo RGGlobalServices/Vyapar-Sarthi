@@ -8,7 +8,7 @@ import {
   Plus, Search, Filter, AlertCircle, Pencil, Trash2, X,
   Loader2, Camera, ShieldCheck, Package,
   Warehouse, Store, MapPin, IndianRupee, Barcode as BarcodeIcon,
-  Percent, Tag, Copy, PackagePlus,
+  Percent, Tag, Copy, PackagePlus, Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/lib/api';
@@ -73,6 +73,8 @@ type Product = {
   size_variants?: string;
   is_loose?: boolean;
   gstPercent?: number;
+  // null = never explicitly picked Including/Excluding GST; true/false = picked.
+  gstInclusive?: boolean | null;
   hsnCode?: string;
   metadata?: any;
   brand?: string;
@@ -275,11 +277,13 @@ function LegacyProductsUI() {
   // active, the value saved to the server is always normalized to the
   // GST-inclusive price (see handleAddSubmit/handleEditSubmit), matching the
   // invariant the rest of the app assumes (billing, profit calc, reports).
-  const [spMode, setSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
+  // null = neither picked yet — starts unselected, price is saved exactly as
+  // typed, and nothing changes until the shopkeeper explicitly clicks one.
+  const [spMode, setSpMode] = useState<'inclusive' | 'exclusive' | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
-  const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive'>('inclusive');
+  const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive' | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string | number>>(new Set());
@@ -513,11 +517,9 @@ function LegacyProductsUI() {
   // real currentStock as 0 on submit. Gating on `editColors.length > 0`
   // instead — seeded from the product's OWN saved size_variants when the
   // modal opens — means a flat product keeps showing (and saving) its
-  // plain Current Stock field, while a real variant product (or one the
-  // shopkeeper adds a colour to mid-edit) still gets the full grid. The
-  // colour/size picker section itself isn't gated on this flag, so the
-  // option to add colours to a flat product is never hidden either way.
-  const editVariantActive = bizConfig.hasColors ? (editColors.length > 0 || editSizeSelection.length > 0) : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && (editColors.length > 0 || editSizeSelection.length > 0)) : editSizeSelection.length > 0;
+  const [editHasVariants, setEditHasVariants] = useState(false);
+  const rawEditVariantActive = bizConfig.hasColors ? (editColors.length > 0 || editSizeSelection.length > 0) : editThreeWayActive ? (editOuterColors.length > 0) : bizConfig.hasSpecs ? (!!editVariantDim && (editColors.length > 0 || editSizeSelection.length > 0)) : editSizeSelection.length > 0;
+  const editVariantActive = editHasVariants && rawEditVariantActive;
 
   // ── Add-product godown/shop assignment ──────────────────────────────────
   const [addToGodownId, setAddToGodownId] = useState('');
@@ -904,7 +906,7 @@ function LegacyProductsUI() {
         brand: form.brand || null,
         conversion_factor: form.conversion_factor ? Number(form.conversion_factor) : null,
         gstPercent: Number(form.gstPercent) || 0,
-        gstInclusive: spMode === 'inclusive',
+        gstInclusive: spMode === null ? null : spMode === 'inclusive',
         hsnCode: form.hsnCode || null,
         barcode: form.barcode?.trim() || `BAR-${Date.now()}`,
         sku: form.sku?.trim() || null,
@@ -942,7 +944,7 @@ function LegacyProductsUI() {
       }
       toast.success('Product added');
       setForm(buildEmptyForm(profile.businessType));
-      setSpMode('inclusive');
+      setSpMode(null);
       setAddToGodownId('');
       setPerSizePricing(false);
       setSizePrices({});
@@ -994,8 +996,11 @@ function LegacyProductsUI() {
 
   function startEdit(product: Product) {
     setEditProduct(product);
-    // Restore the inclusive/exclusive mode from the product's saved flag.
-    setEditSpMode((product as any).gstInclusive ? 'inclusive' : 'exclusive');
+    // Restore the inclusive/exclusive mode from the product's saved flag —
+    // a genuine tri-state: true/false only when the shopkeeper actually
+    // picked one before; null (never chosen) must stay unselected here too,
+    // not silently default to "Excluding".
+    setEditSpMode(product.gstInclusive === true ? 'inclusive' : product.gstInclusive === false ? 'exclusive' : null);
     // Resolve size variants early so both setEditForm and the colour/size
     // pickers below can reference the same value. Primary: size_variants JSON
     // string (manually edited via Edit Product). Fallback: variants[] array
@@ -1090,14 +1095,17 @@ function LegacyProductsUI() {
       setEditSizeSelection(existingSizes);
     }
     setEditBaseVariants(parsedVariants);
+    const hasExistingVariants = (Object.keys(parsedVariants).length > 0 || (product as any).productType === 'variant') && (product as any).productType !== 'single';
+    setEditHasVariants(hasExistingVariants);
     setShowEditModal(true);
   }
   async function handleEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!editProduct) return;
     if (submittingRef.current) return; // synchronous guard — see submittingRef's own comment
-    const sizeVariantsJson = editVariantActive ? serializeSizeVariants(editForm.size_variants) : undefined;
-    const stockQty = editVariantActive ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
+    const isVariant = editHasVariants && editVariantActive;
+    const sizeVariantsJson = isVariant ? serializeSizeVariants(editForm.size_variants) : undefined;
+    const stockQty = isVariant ? totalFromSizes(editForm.size_variants) : Number(editForm.stock);
     // Data-destroying guard: additive mode can only ever ADD to a size's base
     // (deltas are clamped >= 0 — see SizeVariantGrid.handleChange), so under
     // normal use stockQty can never legitimately fall below priorStock. The one
@@ -1119,13 +1127,13 @@ function LegacyProductsUI() {
     // exactly as "the Save button doesn't work". Only warn when stock is
     // missing from colours/sizes that are STILL selected — i.e. genuinely
     // un-distributed stock, not stock that left along with a removed colour.
-    const explainedStock = editVariantActive
+    const explainedStock = isVariant
       ? Object.entries(editBaseVariants).reduce((s, [k, v]) => {
           const { color } = splitVariantKey(k);
           return (!color || editColors.includes(color)) ? s + (Number(v) || 0) : s;
         }, 0)
       : priorStock;
-    if (editVariantActive && stockQty < explainedStock && explainedStock > 0) {
+    if (isVariant && stockQty < explainedStock && explainedStock > 0) {
       const ok = await confirmAsync(
         stockQty === 0
           ? `Warning: this will set stock to 0.\n\nCurrent stock: ${explainedStock}\nAll size boxes are 0.\n\nDid you mean to distribute the ${explainedStock} units across sizes first?\n\nClick Cancel to go back and fill the sizes, or OK to save as 0.`
@@ -1138,7 +1146,7 @@ function LegacyProductsUI() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      let editMetadata = editVariantActive
+      let editMetadata = isVariant
         ? mergeSizePricesIntoMetadata(editProduct.metadata, editSizePricesEffective, Object.keys(editSizePricesEffective).length > 0)
         : undefined;
       // Preserve/refresh liquor extras in the metadata JSON.
@@ -1156,6 +1164,7 @@ function LegacyProductsUI() {
         name: editForm.name,
         category: editForm.category,
         current_stock: stockQty,
+        productType: isVariant ? 'variant' : 'single',
         min_stock: Number(editForm.minStock),
         mrp: Number(editForm.mrp) || 0,
         selling_price: normalizedEditSellingPrice,
@@ -1172,16 +1181,13 @@ function LegacyProductsUI() {
         warranty_months: editForm.warranty_months ? Number(editForm.warranty_months) : null,
         gender: editForm.gender || null,
         shade: editForm.shade || null,
-        // A product whose saved variants have no colour (bare sizes, e.g. from an import) opens with
-        // the flat Stock field (editVariantActive=false) — sending null here used to wipe those
-        // variants. Keep them as-is; the server then keeps stock = sum of variants.
-        size_variants: sizeVariantsJson
-          ?? (Object.keys(editForm.size_variants || {}).length > 0 ? serializeSizeVariants(editForm.size_variants) : null),
+        size_variants: isVariant ? sizeVariantsJson : null,
+        variants: isVariant ? undefined : [],
         metadata: editMetadata,
         brand: editForm.brand || null,
         conversion_factor: editForm.conversion_factor ? Number(editForm.conversion_factor) : null,
         gstPercent: Number(editForm.gstPercent) || 0,
-        gstInclusive: editSpMode === 'inclusive',
+        gstInclusive: editSpMode === null ? null : editSpMode === 'inclusive',
         hsnCode: editForm.hsnCode || null,
         barcode: editForm.barcode?.trim() || undefined,
         sku: editForm.sku?.trim() || null,
@@ -2460,7 +2466,36 @@ function LegacyProductsUI() {
                       <p className="text-[11px] font-bold text-violet-500 dark:text-violet-400 uppercase tracking-widest">{editVariantDim?.sectionLabel || tv('sizeWeightInventory')}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {editPerSizePricing && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (editHasVariants) {
+                            const ok = await confirmAsync(
+                              'Switching to single product will disable size/color breakdown and track flat stock instead. Continue?',
+                              { okLabel: 'Switch to Single', cancelLabel: 'Keep Variants', title: 'Disable Variants' }
+                            );
+                            if (ok) {
+                              setEditHasVariants(false);
+                              setEditColors([]);
+                              setEditOuterColors([]);
+                              setEditSizeSelection([]);
+                              setEditForm(f => ({ ...f, size_variants: {} }));
+                            }
+                          } else {
+                            setEditHasVariants(true);
+                          }
+                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
+                          editHasVariants
+                            ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border border-violet-300 dark:border-violet-500/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                        )}
+                      >
+                        <Layers size={10} />
+                        {editHasVariants ? 'Variants: Enabled' : '+ Enable Variants'}
+                      </button>
+                      {editHasVariants && editPerSizePricing && (
                         <button
                           type="button"
                           title={tv('generateVariantBarcodes')}
@@ -2474,93 +2509,94 @@ function LegacyProductsUI() {
                           {tv('generateVariantBarcodes')}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !editPerSizePricing;
-                          setEditPerSizePricing(next);
-                          // Per-size pricing replaces the default price → reset it to 0.
-                          if (next) setEditForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
-                        }}
-                        className={cn(
-                          'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
-                          editPerSizePricing
-                            ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
-                        )}
-                      >
-                        <IndianRupee size={10} />
-                        {editPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
-                      </button>
+                      {editHasVariants && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !editPerSizePricing;
+                            setEditPerSizePricing(next);
+                            // Per-size pricing replaces the default price → reset it to 0.
+                            if (next) setEditForm(f => ({ ...f, mrp: '0', sellingPrice: '0', cost: '0' }));
+                          }}
+                          className={cn(
+                            'flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all',
+                            editPerSizePricing
+                              ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300'
+                          )}
+                        >
+                          <IndianRupee size={10} />
+                          {editPerSizePricing ? tv('perSizePricingOn') : tv('perSizePricing')}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  {bizConfig.hasSpecs && editVariantDim && (
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
-                  )}
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('editVariantAdditiveHint')}</p>
-                  {(() => {
-                    // A product created / imported / stock-adjusted with only an
-                    // aggregate count (no per-size split) opens here with every
-                    // size box showing its true value: 0. That's correct per-size,
-                    // but with nothing nearby saying where the real stock went, it
-                    // reads as "this product has no stock" — surface the aggregate
-                    // so it isn't mistaken for zero. Mirrors the same banner already
-                    // shown for this exact state on the Billing quick-sell picker.
-                    const assignedTotal = Object.values(editBaseVariants).reduce((s, v) => s + (Number(v) || 0), 0);
-                    const aggregateStock = Number((editProduct as any)?.stock ?? (editProduct as any)?.currentStock ?? 0);
-                    const unassigned = assignedTotal === 0 && aggregateStock > 0 ? aggregateStock : 0;
-                    if (unassigned <= 0) return null;
-                    const unitWord = editForm.unit?.toLowerCase() || 'units';
-                    // The 2-way grid distributes BOTH colour and size, so naming only
-                    // the outer dimension ("colour") undersells what's left to fill in.
-                    const dimensionWord = bizConfig.hasColors
-                      ? 'colour and size'
-                      : (editVariantDim?.sizeLabel || editVariantDim?.label || 'size').toLowerCase();
-                    return (
-                      <div className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
-                        <strong>{unassigned} {unitWord} in stock</strong> but not yet assigned to any specific {dimensionWord}.
-                        Fill in the boxes below to distribute it — it stays tracked only as a shop-wide total until you do, and saving without distributing it will drop whatever isn't reflected in a box.
-                      </div>
-                    );
-                  })()}
-                  {editThreeWayActive ? (
-                    <ThreeWayVariantGrid
-                      colorPalette={bizConfig.colorChart || []}
-                      colors={editOuterColors}
-                      onColorsChange={setEditOuterColors}
-                      innerRowOptions={editVariantDim!.options}
-                      innerColOptions={editVariantDim!.sizeChart}
-                      value={editForm.size_variants}
-                      onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
-                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
-                      perSizePricing={editPerSizePricing}
-                      sizePrices={editSizePricesEffective}
-                      onSizePricesChange={setEditSizePrices}
-                      innerRowLabel={editVariantDim!.typeLabel || editVariantDim!.label}
-                      innerColLabel={editVariantDim!.sizeLabel || 'Size'}
-                      additiveMode
-                      baseValue={editBaseVariants}
-                    />
+                  {!editHasVariants ? (
+                    <div className="text-xs text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 rounded-lg p-3 border border-dashed border-violet-500/30">
+                      Single item with flat stock. Click <strong className="text-violet-600 dark:text-violet-400">+ Enable Variants</strong> above only if you want to track separate quantities per size/color.
+                    </div>
                   ) : (
-                    <SimpleVariantBuilder
-                      colors={editColors}
-                      onColorsChange={handleEditColorsChange}
-                      sizes={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
-                      onSizesChange={setEditSizeSelection}
-                      value={editForm.size_variants}
-                      onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
-                      baseValue={editBaseVariants}
-                      sizePrices={editSizePricesEffective}
-                      onSizePricesChange={setEditSizePrices}
-                      perSizePricing={editPerSizePricing}
-                      colorOptions={editVariantDim?.options || []}
-                      showSwatch={editVariantDim?.swatch ?? true}
-                      colorLabel={editVariantDim?.label || 'colour'}
-                      sizeLabel={(editVariantDim as any)?.sizeLabel || 'size'}
-                      sizeChart={editVariantDim?.sizeChart || bizConfig.sizeChart || []}
-                      allowColors={!!editVariantDim}
-                      unitLabel={editForm.unit?.toLowerCase() || 'units'}
-                    />
+                    <>
+                      {bizConfig.hasSpecs && editVariantDim && (
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('optionalProductHint')}</p>
+                      )}
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">{tv('editVariantAdditiveHint')}</p>
+                      {(() => {
+                        const assignedTotal = Object.values(editBaseVariants).reduce((s, v) => s + (Number(v) || 0), 0);
+                        const aggregateStock = Number((editProduct as any)?.stock ?? (editProduct as any)?.currentStock ?? 0);
+                        const unassigned = assignedTotal === 0 && aggregateStock > 0 ? aggregateStock : 0;
+                        if (unassigned <= 0) return null;
+                        const unitWord = editForm.unit?.toLowerCase() || 'units';
+                        const dimensionWord = bizConfig.hasColors
+                          ? 'colour and size'
+                          : (editVariantDim?.sizeLabel || editVariantDim?.label || 'size').toLowerCase();
+                        return (
+                          <div className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+                            <strong>{unassigned} {unitWord} in stock</strong> but not yet assigned to any specific {dimensionWord}.
+                            Fill in the boxes below to distribute it — it stays tracked only as a shop-wide total until you do, and saving without distributing it will drop whatever isn't reflected in a box.
+                          </div>
+                        );
+                      })()}
+                      {editThreeWayActive ? (
+                        <ThreeWayVariantGrid
+                          colorPalette={bizConfig.colorChart || []}
+                          colors={editOuterColors}
+                          onColorsChange={setEditOuterColors}
+                          innerRowOptions={editVariantDim!.options}
+                          innerColOptions={editVariantDim!.sizeChart}
+                          value={editForm.size_variants}
+                          onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
+                          unitLabel={editForm.unit?.toLowerCase() || 'units'}
+                          perSizePricing={editPerSizePricing}
+                          sizePrices={editSizePricesEffective}
+                          onSizePricesChange={setEditSizePrices}
+                          innerRowLabel={editVariantDim!.typeLabel || editVariantDim!.label}
+                          innerColLabel={editVariantDim!.sizeLabel || 'Size'}
+                          additiveMode
+                          baseValue={editBaseVariants}
+                        />
+                      ) : (
+                        <SimpleVariantBuilder
+                          colors={editColors}
+                          onColorsChange={handleEditColorsChange}
+                          sizes={Array.from(new Set([...editSizeSelection, ...sizesFromVariants(editForm.size_variants)]))}
+                          onSizesChange={setEditSizeSelection}
+                          value={editForm.size_variants}
+                          onChange={variants => setEditForm(f => ({ ...f, size_variants: variants }))}
+                          baseValue={editBaseVariants}
+                          sizePrices={editSizePricesEffective}
+                          onSizePricesChange={setEditSizePrices}
+                          perSizePricing={editPerSizePricing}
+                          colorOptions={editVariantDim?.options || []}
+                          showSwatch={editVariantDim?.swatch ?? true}
+                          colorLabel={editVariantDim?.label || 'colour'}
+                          sizeLabel={(editVariantDim as any)?.sizeLabel || 'size'}
+                          sizeChart={editVariantDim?.sizeChart || bizConfig.sizeChart || []}
+                          allowColors={!!editVariantDim}
+                          unitLabel={editForm.unit?.toLowerCase() || 'units'}
+                        />
+                      )}
+                    </>
                   )}
                 </section>
               )}
@@ -2670,11 +2706,17 @@ function LegacyProductsUI() {
                       <button key={mode} type="button"
                         onClick={() => {
                           if (mode === editSpMode) return;
-                          const gst = Number(editForm.gstPercent) || 0;
-                          const current = Number(editForm.sellingPrice) || 0;
-                          if (current > 0) {
-                            const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
-                            setEditForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                          // Only convert the typed price when switching AWAY from an
+                          // already-chosen mode. Going from unselected (null) to a
+                          // first explicit choice has no "other" basis to convert
+                          // from — the price as typed simply becomes that mode's.
+                          if (editSpMode !== null) {
+                            const gst = Number(editForm.gstPercent) || 0;
+                            const current = Number(editForm.sellingPrice) || 0;
+                            if (current > 0) {
+                              const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
+                              setEditForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                            }
                           }
                           setEditSpMode(mode);
                         }}
@@ -2686,7 +2728,7 @@ function LegacyProductsUI() {
                     ))}
                   </div>
                 </div>
-                {editForm.sellingPrice && Number(editForm.sellingPrice) > 0 && (
+                {editSpMode !== null && editForm.sellingPrice && Number(editForm.sellingPrice) > 0 && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2">
                     {editSpMode === 'inclusive'
                       ? `This price includes GST. Excl. GST: ₹${toExclusivePrice(Number(editForm.sellingPrice), Number(editForm.gstPercent) || 0).toFixed(2)}`
@@ -2705,7 +2747,9 @@ function LegacyProductsUI() {
                   const gst = Number(editForm.gstPercent) || 0;
                   const spForProfit = editSpMode === 'exclusive'
                     ? spTyped
-                    : (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped);
+                    : editSpMode === 'inclusive'
+                      ? (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped)
+                      : spTyped;
                   const result = calculateProductProfit(spForProfit, effectiveCostPrice(editForm), 0, false);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);
@@ -3207,11 +3251,17 @@ function LegacyProductsUI() {
                       <button key={mode} type="button"
                         onClick={() => {
                           if (mode === spMode) return;
-                          const gst = Number(form.gstPercent) || 0;
-                          const current = Number(form.sellingPrice) || 0;
-                          if (current > 0) {
-                            const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
-                            setForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                          // Only convert the typed price when switching AWAY from an
+                          // already-chosen mode. Going from unselected (null) to a
+                          // first explicit choice has no "other" basis to convert
+                          // from — the price as typed simply becomes that mode's.
+                          if (spMode !== null) {
+                            const gst = Number(form.gstPercent) || 0;
+                            const current = Number(form.sellingPrice) || 0;
+                            if (current > 0) {
+                              const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
+                              setForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                            }
                           }
                           setSpMode(mode);
                         }}
@@ -3223,7 +3273,7 @@ function LegacyProductsUI() {
                     ))}
                   </div>
                 </div>
-                {form.sellingPrice && Number(form.sellingPrice) > 0 && (
+                {spMode !== null && form.sellingPrice && Number(form.sellingPrice) > 0 && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2">
                     {spMode === 'inclusive'
                       ? `This price includes GST. Excl. GST: ₹${toExclusivePrice(Number(form.sellingPrice), Number(form.gstPercent) || 0).toFixed(2)}`
@@ -3242,7 +3292,9 @@ function LegacyProductsUI() {
                   const gst = Number(form.gstPercent) || 0;
                   const spForProfit = spMode === 'exclusive'
                     ? spTyped
-                    : (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped);
+                    : spMode === 'inclusive'
+                      ? (profile.gstInclusiveProfit ? spTyped / (1 + gst / 100) : spTyped)
+                      : spTyped;
                   const result = calculateProductProfit(spForProfit, effectiveCostPrice(form), 0, false);
                   const boxCls = result.status === 'profit' ? 'bg-emerald-500/10 border-emerald-500/20' : result.status === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20';
                   const textCls = profitColorClass(result.status);

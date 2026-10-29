@@ -53,6 +53,11 @@ export function mapApiProductToRow(p: any) {
     costPriceMode: p.costPriceMode,
     purchaseDiscountPercent: p.purchaseDiscountPercent,
     gstPercent: p.gstPercent,
+    // null (never explicitly picked) vs true/false (Including/Excluding GST
+    // picked and saved) — must pass through as-is so the Edit modal's toggle
+    // can tell "unselected" apart from "explicitly chose Excluding" and not
+    // show the wrong one as selected.
+    gstInclusive: p.gstInclusive,
     hsnCode: p.hsnCode,
     brand: p.brand,
     conversionFactor: p.conversionFactor,

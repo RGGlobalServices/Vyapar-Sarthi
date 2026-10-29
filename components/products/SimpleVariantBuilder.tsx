@@ -142,15 +142,7 @@ export default function SimpleVariantBuilder({
     onSizePricesChange({ ...sizePrices, [key]: { ...cur, [field]: Math.max(0, Number(raw) || 0) } });
   };
 
-  // Every generated row becomes a real variant (0 stock) even if no quantity is typed for it.
-  const missingKeys = JSON.stringify(rows.filter((r) => !(r.key in value)).map((r) => r.key));
-  useEffect(() => {
-    if (missingKeys === '[]') return;
-    const next = { ...value };
-    for (const k of JSON.parse(missingKeys) as string[]) next[k] = baseOf(k);
-    onChange(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missingKeys]);
+  // Rows carry their current typed or base quantity on demand without auto-mutating parent state on mount.
 
   const rowFocusNext = (i: number) => () => {
     const nextEl = document.querySelector<HTMLInputElement>(`[data-vb-qty="${i + 1}"]`);
