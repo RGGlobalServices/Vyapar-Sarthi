@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       if (isMill) {
         await tx.$executeRaw`
           DELETE FROM batch_stage_execution_fields
-          WHERE stage_id IN (
+          WHERE batch_stage_id IN (
             SELECT bs.id FROM batch_stages bs
             JOIN production_batches pb ON pb.id = bs.batch_id
             WHERE pb.shop_id = ${shopId}::uuid
@@ -44,38 +44,38 @@ export async function POST(req: NextRequest) {
 
         await tx.$executeRaw`
           DELETE FROM batch_stage_inputs
-          WHERE snapshot_id IN (
+          WHERE batch_stage_snapshot_id IN (
             SELECT bss.id FROM batch_stage_snapshots bss
-            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-            JOIN production_batches pb ON pb.id = bws.batch_id
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.batch_workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.production_batch_id
             WHERE pb.shop_id = ${shopId}::uuid
           )`;
         await tx.$executeRaw`
           DELETE FROM batch_stage_outputs
-          WHERE snapshot_id IN (
+          WHERE batch_stage_snapshot_id IN (
             SELECT bss.id FROM batch_stage_snapshots bss
-            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-            JOIN production_batches pb ON pb.id = bws.batch_id
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.batch_workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.production_batch_id
             WHERE pb.shop_id = ${shopId}::uuid
           )`;
         await tx.$executeRaw`
           DELETE FROM batch_stage_quality_parameters
-          WHERE snapshot_id IN (
+          WHERE batch_stage_snapshot_id IN (
             SELECT bss.id FROM batch_stage_snapshots bss
-            JOIN batch_workflow_snapshots bws ON bws.id = bss.workflow_snapshot_id
-            JOIN production_batches pb ON pb.id = bws.batch_id
+            JOIN batch_workflow_snapshots bws ON bws.id = bss.batch_workflow_snapshot_id
+            JOIN production_batches pb ON pb.id = bws.production_batch_id
             WHERE pb.shop_id = ${shopId}::uuid
           )`;
         await tx.$executeRaw`
           DELETE FROM batch_stage_snapshots
-          WHERE workflow_snapshot_id IN (
+          WHERE batch_workflow_snapshot_id IN (
             SELECT bws.id FROM batch_workflow_snapshots bws
-            JOIN production_batches pb ON pb.id = bws.batch_id
+            JOIN production_batches pb ON pb.id = bws.production_batch_id
             WHERE pb.shop_id = ${shopId}::uuid
           )`;
         await tx.$executeRaw`
           DELETE FROM batch_workflow_snapshots
-          WHERE batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
+          WHERE production_batch_id IN (SELECT id FROM production_batches WHERE shop_id = ${shopId}::uuid)`;
 
         await tx.$executeRaw`
           DELETE FROM batch_stages
@@ -125,6 +125,15 @@ export async function POST(req: NextRequest) {
       await tx.materialReturn.deleteMany({ where: { shopId } });
       await tx.sale.deleteMany({ where: { shopId } });
 
+      // ── Orders ─────────────────────────────────────────────────────────────
+      // Must run before BOTH Supplier (below) and Customer (further down) —
+      // Order.supplierId and Order.customerId are both onDelete: NoAction
+      // (orders_supplier_id_fkey / orders_customer_id_fkey), so a supplier
+      // or customer with orders still attached can't be deleted first.
+      await tx.$executeRaw`
+        DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ${shopId}::uuid)`;
+      await tx.order.deleteMany({ where: { shopId } });
+
       // ── Purchases ──────────────────────────────────────────────────────────
       // purchase_returns cascade from purchase_invoices (purchase_invoice_id FK, onDelete: Cascade)
       // purchase_return_items cascade from purchase_returns (onDelete: Cascade)
@@ -134,6 +143,9 @@ export async function POST(req: NextRequest) {
       await tx.supplier.deleteMany({ where: { shopId } });
 
       // ── Customers / parties & udhar ────────────────────────────────────────
+      // Expense.partyId is also onDelete: NoAction (expenses_party_id_fkey) —
+      // same reason, must run before the Customer delete.
+      await tx.expense.deleteMany({ where: { shopId } });
       await tx.$executeRaw`
         DELETE FROM collection_entries
         WHERE sheet_id IN (SELECT id FROM collection_sheets WHERE shop_id = ${shopId}::uuid)`;
@@ -143,11 +155,6 @@ export async function POST(req: NextRequest) {
         DELETE FROM customer_transactions
         WHERE customer_id IN (SELECT id FROM customers WHERE shop_id = ${shopId}::uuid)`;
       await tx.customer.deleteMany({ where: { shopId } });
-
-      // ── Orders ─────────────────────────────────────────────────────────────
-      await tx.$executeRaw`
-        DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ${shopId}::uuid)`;
-      await tx.order.deleteMany({ where: { shopId } });
 
       // ── Stock ──────────────────────────────────────────────────────────────
       await tx.$executeRaw`
@@ -181,7 +188,7 @@ export async function POST(req: NextRequest) {
       await tx.staff.deleteMany({ where: { shopId } });
 
       // ── Financials & logs ─────────────────────────────────────────────────
-      await tx.expense.deleteMany({ where: { shopId } });
+      // Expense is deleted earlier, before Customer (see above).
       await tx.cashBook.deleteMany({ where: { shopId } });
       await tx.dailyClosing.deleteMany({ where: { shopId } });
       await tx.dailyRegisterLog.deleteMany({ where: { shopId } });
