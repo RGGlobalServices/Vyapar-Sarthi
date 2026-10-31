@@ -1429,7 +1429,19 @@ export default function WholesaleBillingUI() {
         quantity: itemQty,
         price,
         cost: cost || 0,
-        profit: (price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)) - cost,
+        // Profit = what the shop actually keeps, minus cost. GST only eats
+        // into that when it's baked INTO price (product.gstInclusive:
+        // true) — the shop then owes govt. gstPercent/(100+gstPercent) of
+        // price, so dividing by (1+gst%) recovers the real taxable base.
+        // When gstInclusive is false (the normal case — GST is added ON
+        // TOP, passed through to the customer separately), price itself is
+        // already the full amount the shop keeps; dividing it by (1+gst%)
+        // anyway silently shrank profit by the GST% on every priced
+        // product — a ₹720 line at 18% GST showed a ₹9.83 LOSS instead of
+        // its real ₹100 profit (cost ₹620).
+        profit: (product.gstInclusive
+          ? price / (1 + (Number(product.gstPercent ?? product.gst_percent ?? 0) || 0) / 100)
+          : price) - cost,
         total: Math.round(price * itemQty),
         is_loose: !!product.is_loose,
         // Which physical lot this line is pinned to — sent to the backend as
@@ -1473,7 +1485,10 @@ export default function WholesaleBillingUI() {
               batchId: first.id,
               batchNumber: displayBatchNumber,
               cost: reconciledCost,
-              profit: (price / (1 + gstPercent / 100)) - reconciledCost,
+              // Same gstInclusive branch as the addItem() call above — keep
+              // the two in sync, or the lot reconciliation that runs a
+              // moment later would silently undo the fix there.
+              profit: (product.gstInclusive ? price / (1 + gstPercent / 100) : price) - reconciledCost,
             });
           }
         };
@@ -4189,7 +4204,9 @@ export default function WholesaleBillingUI() {
                       batchId: b.id,
                       batchNumber: b.batchNumber,
                       cost: reconciledCost,
-                      profit: (linePrice / (1 + gstPercent / 100)) - reconciledCost,
+                      // Same gstInclusive branch as addToCart's profit calc —
+                      // only back out GST when it's baked into the price.
+                      profit: (chosen.gstInclusive ? linePrice / (1 + gstPercent / 100) : linePrice) - reconciledCost,
                     });
                   }}
                   className="w-full text-left p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between gap-3"
