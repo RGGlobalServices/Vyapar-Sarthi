@@ -811,7 +811,19 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       const msg = err instanceof Error ? err.message : String(err);
       return /no endpoints|not.*found|invalid.*model|model.*not.*available|all models in chain unavailable|\b404\b/i.test(msg);
     };
-    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err);
+    // A dead/expired/revoked key (401/403 — distinct from a live key that's
+    // merely out of quota, which isQuotaError already covers) used to hard-fail
+    // the whole import the moment ANY provider's key went stale, even though
+    // the other provider (or Tesseract OCR, last resort) could still have
+    // served the request. Real incident: production's GEMINI_API_KEY expired
+    // ("401 Your API key has expired") and every import on the site broke,
+    // even though OPENAI_API_KEY/Tesseract were fine. Falling through here
+    // instead means one dead key degrades quality, not an outright outage.
+    const isAuthError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /\b401\b|\b403\b|unauthorized|unauthenticated|api key.*(expired|invalid|revoked)|invalid.*api.?key|permission.?denied/i.test(msg);
+    };
+    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err) || isAuthError(err);
 
     // ─── Zero-API OCR fallback (Tesseract) ───────────────────────────────
     // Terminal fallback when EVERY AI provider fails. tesseract.js is a
