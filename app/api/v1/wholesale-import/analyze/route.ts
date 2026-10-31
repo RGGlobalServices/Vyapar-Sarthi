@@ -572,21 +572,37 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       || 'gemini-3.5-flash,gemini-3.5-flash-lite')
       .split(',').map(s => s.trim()).filter(Boolean);
 
+    // Hard wall-clock ceiling on the ENTIRE key×model×retry matrix below, not
+    // just one attempt. Making Gemini primary means its retry storm now runs
+    // FIRST on every request — worst case (4 keys × 2 models × 3 attempts ×
+    // up to importConfig.timeoutMs=30s each, plus backoff sleeps) added up to
+    // minutes, which is exactly what blew past Hostinger's nginx proxy and
+    // came back as a bare "504 Gateway Time-out" with no AI error at all (the
+    // app itself never got the chance to reply — nginx gave up first). This
+    // budget makes the Gemini path fail fast and fall through to OpenAI /
+    // Tesseract well inside any reasonable gateway timeout.
+    const GEMINI_MATRIX_BUDGET_MS = Number(process.env.IMPORT_GEMINI_BUDGET_MS) || 20000;
+
     // One Gemini generateContent invocation with per-attempt timeout, retry
     // on transient 429s (respecting the retryDelay hint), and automatic
     // fall-through across BOTH models AND keys on hard quota failure.
     // Matrix: key1×model1 → key1×model2 → key2×model1 → key2×model2 → …
     const callGeminiOnce = async (contents: any, kind: string): Promise<string> => {
       if (geminiClients.length === 0) throw new Error('Gemini API key not configured');
+      const matrixDeadline = Date.now() + GEMINI_MATRIX_BUDGET_MS;
 
       const attempt = async (client: GoogleGenAI, model: string): Promise<string> => {
+        // Never let a single attempt's own timeout outlast what's left of the
+        // overall matrix budget — otherwise one slow first call alone could
+        // still burn the whole budget before any fallback is tried.
+        const attemptTimeoutMs = Math.max(1000, Math.min(importConfig.timeoutMs, matrixDeadline - Date.now()));
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
-            const err = new Error(`Gemini ${kind} call to ${model} timed out after ${importConfig.timeoutMs}ms`);
+            const err = new Error(`Gemini ${kind} call to ${model} timed out after ${attemptTimeoutMs}ms`);
             err.name = 'TimeoutError';
             reject(err);
-          }, importConfig.timeoutMs);
+          }, attemptTimeoutMs);
         });
 
         try {
@@ -610,27 +626,34 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       // Walk every key × every model. On quota (429 / PerDay), try next model
       // on the same key first; if ALL models on a key are quota-exhausted, move
       // to the next key. Non-quota errors short-circuit immediately.
+      outer:
       for (const client of geminiClients) {
         let anyModelQuotaExhausted = false;
         for (const model of geminiChain) {
           let escalate = false;
           for (let i = 0; i < 3; i++) {
+            if (Date.now() >= matrixDeadline) {
+              lastErrors.push(`budget exhausted (${GEMINI_MATRIX_BUDGET_MS}ms) before trying every key/model`);
+              break outer;
+            }
             try { return await attempt(client, model); }
             catch (e: any) {
               const msg = e?.message || String(e);
               const wait = parseRetryDelayMs(e);
-              // Transient 429 with retryDelay hint: honour it and retry same model.
-              if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg)) {
+              // Transient 429 with retryDelay hint: honour it and retry same model —
+              // but never past the overall budget, or a generous retryDelay hint
+              // (these can be 20s+) could alone exceed it.
+              if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg) && Date.now() + wait < matrixDeadline) {
                 await sleep(wait);
                 continue;
               }
               // Transient overload: 2s → 4s → 8s, then escalate to next model.
-              if (isTransientUnavailable(e) && i < 2) {
+              if (isTransientUnavailable(e) && i < 2 && Date.now() + 2000 * Math.pow(2, i) < matrixDeadline) {
                 await sleep(2000 * Math.pow(2, i));
                 continue;
               }
               lastErrors.push(`key${geminiClients.indexOf(client) + 1}/${model}: ${msg.slice(0, 180)}`);
-              
+
               // Always escalate to the next model/key on ANY failure
               // (quota, invalid key, timeout, bad request) to ensure maximum robustness.
               escalate = true;
