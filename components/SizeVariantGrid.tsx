@@ -143,6 +143,11 @@ export interface SizePriceEntry {
   mrp: number;
   sellingPrice: number;
   cost: number;
+  /** Udyog only: the shop's own real purchase cost, distinct from `cost`
+   *  (which Udyog repurposes to mean the Wholesale selling price — see
+   *  udyog-three-tier-pricing). Optional so Dukan/Vyapar, which never set
+   *  it, are unaffected. */
+  costPrice?: number;
   minStock?: number;
   /** Per-variant scannable barcode. When present, a desktop scanner reading
    *  this code lands the exact colour/size on the bill (see billing scan

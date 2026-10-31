@@ -35,8 +35,13 @@ type Props = {
   sizeChart: string[];
   allowColors?: boolean;
   unitLabel?: string;
-  /** Placeholder labels of the 3 per-variant price boxes (Udyog calls `cost` its Wholesale price). */
-  priceLabels?: { sellingPrice?: string; mrp?: string; cost?: string };
+  /** Placeholder labels of the per-variant price boxes (Udyog calls `cost` its Wholesale price). */
+  priceLabels?: { sellingPrice?: string; mrp?: string; cost?: string; costPrice?: string };
+  /** Which per-variant price boxes to show, and in what order. Defaults to the
+   *  original 3 (Dukan/Vyapar: Sell, MRP, Cost). Udyog adds 'costPrice' (the
+   *  shop's real purchase cost, separate from `cost` = Wholesale selling
+   *  price) and orders it Cost Price, Wholesale, Retail, MRP. */
+  priceFields?: Array<'costPrice' | 'cost' | 'sellingPrice' | 'mrp'>;
 };
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -64,6 +69,7 @@ export default function SimpleVariantBuilder({
   sizePrices = {}, onSizePricesChange, perSizePricing = false,
   colorOptions = [], showSwatch = true, colorLabel = 'colour', sizeLabel = 'size',
   sizeChart, allowColors = true, unitLabel = 'pcs', priceLabels,
+  priceFields = ['sellingPrice', 'mrp', 'cost'],
 }: Props) {
   const additive = !!baseValue;
   const [sizeText, setSizeText] = useState('');
@@ -136,7 +142,7 @@ export default function SimpleVariantBuilder({
     for (const r of rows) next[r.key] = additive ? baseOf(r.key) + n : n;
     onChange(next);
   };
-  const setPrice = (key: string, field: 'mrp' | 'sellingPrice' | 'cost', raw: string) => {
+  const setPrice = (key: string, field: 'mrp' | 'sellingPrice' | 'cost' | 'costPrice', raw: string) => {
     if (!onSizePricesChange) return;
     const cur = sizePrices[key] || { mrp: 0, sellingPrice: 0, cost: 0 };
     onSizePricesChange({ ...sizePrices, [key]: { ...cur, [field]: Math.max(0, Number(raw) || 0) } });
@@ -263,10 +269,10 @@ export default function SimpleVariantBuilder({
                   </div>
                   {perSizePricing && (
                     <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                      {(['sellingPrice', 'mrp', 'cost'] as const).map((f) => (
+                      {priceFields.map((f) => (
                         <div key={f} className="w-20">
                           <QtyInput value={price?.[f] ? String(price[f]) : ''} onCommit={(v) => setPrice(r.key, f, v)}
-                            placeholder={priceLabels?.[f] ?? (f === 'sellingPrice' ? 'Sell ₹' : f === 'mrp' ? 'MRP ₹' : 'Cost ₹')} className={cn(inp, 'text-xs')} />
+                            placeholder={priceLabels?.[f] ?? (f === 'sellingPrice' ? 'Sell ₹' : f === 'mrp' ? 'MRP ₹' : f === 'costPrice' ? 'Cost ₹' : 'Cost ₹')} className={cn(inp, 'text-xs')} />
                         </div>
                       ))}
                     </div>

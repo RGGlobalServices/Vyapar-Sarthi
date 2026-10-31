@@ -402,8 +402,8 @@ export default function WholesaleProductsUI() {
   // ── Simple variant builder adapters (colours × sizes -> variants[]) ──────────
   const builderSizes = Array.from(new Set([...variants.map(v => v.size).filter(Boolean), ...customSizes]));
   const builderValue: Record<string, number> = Object.fromEntries(variants.map(v => [variantKeyOf(v), Number(v.stock) || 0]));
-  const builderPrices: Record<string, { mrp: number; sellingPrice: number; cost: number }> = Object.fromEntries(
-    variants.map(v => [variantKeyOf(v), { mrp: v.mrp || 0, sellingPrice: v.sellingPrice || 0, cost: v.wholesalePrice || 0 }]),
+  const builderPrices: Record<string, { mrp: number; sellingPrice: number; cost: number; costPrice: number }> = Object.fromEntries(
+    variants.map(v => [variantKeyOf(v), { mrp: v.mrp || 0, sellingPrice: v.sellingPrice || 0, cost: v.wholesalePrice || 0, costPrice: v.costPrice || 0 }]),
   );
   // Rebuild variants[] for the chosen colours × sizes: existing rows keep their prices, new rows are
   // seeded from the shared price fields, rows no longer in the grid are dropped.
@@ -2251,6 +2251,49 @@ export default function WholesaleProductsUI() {
 
                 </section>
 
+                {/* Opening/Current Stock — Single Product only. The wholesale module
+                    otherwise expects stock to come in through Purchases (supplier,
+                    batch, warehouse tracked) — see the blue note at the bottom of
+                    this form — but a brand-new single product had NO way to record
+                    stock the shopkeeper already physically has, so every new single
+                    product silently saved with currentStock = 0 until a Purchase
+                    was entered for it. This field sets/adjusts currentStock directly
+                    (same as Dukan/Vyapar's own product form already does); it does
+                    NOT create a batch, assign a warehouse, or record a supplier/cost —
+                    for stock that needs that trail, Purchases is still the right tool. */}
+                {form.productType === 'single' && (
+                  <section className="space-y-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-1 h-4 rounded bg-emerald-500" />
+                      <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
+                        {form.id ? 'Current Stock' : 'Opening Stock'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
+                        Quantity ({form.baseUnit || 'units'})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={form.currentStock ?? ''}
+                        onChange={e => setForm({
+                          ...form,
+                          currentStock: e.target.value === '' ? undefined : Math.max(0, parseInt(e.target.value) || 0),
+                        })}
+                        placeholder="0"
+                        className="w-full sm:w-48 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {form.id
+                          ? 'Adjusting this directly logs a stock entry.'
+                          : 'Stock you already have on hand. For a tracked receipt (supplier, batch, warehouse), use Purchases instead.'}
+                      </p>
+                    </div>
+                  </section>
+                )}
+
                 {/* Colour × Size Inventory — dedicated section, same idiom as
                     Vyapar/Dukan's violet-tinted variant panel. Single/Loose
                     products get a one-colour picker; Variant products get the
@@ -2346,13 +2389,14 @@ export default function WholesaleProductsUI() {
                           .filter(v => Object.prototype.hasOwnProperty.call(next, variantKeyOf(v)))
                           .map(v => {
                             const pr = next[variantKeyOf(v)];
-                            return pr ? { ...v, mrp: pr.mrp, sellingPrice: pr.sellingPrice, wholesalePrice: pr.cost } : v;
+                            return pr ? { ...v, mrp: pr.mrp, sellingPrice: pr.sellingPrice, wholesalePrice: pr.cost, costPrice: pr.costPrice } : v;
                           })
                         )}
                         perSizePricing={!sameVariantPricing}
                         colorOptions={bizConfig.colorChart || []}
                         sizeChart={baseSizeChart}
-                        priceLabels={{ cost: 'Wholesale ₹', sellingPrice: 'Retail ₹', mrp: 'MRP ₹' }}
+                        priceLabels={{ costPrice: 'Cost ₹', cost: 'Wholesale ₹', sellingPrice: 'Retail ₹', mrp: 'MRP ₹' }}
+                        priceFields={['costPrice', 'cost', 'sellingPrice', 'mrp']}
                         unitLabel="pcs"
                       />
                     ) : (
