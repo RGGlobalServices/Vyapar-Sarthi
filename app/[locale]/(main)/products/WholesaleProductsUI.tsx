@@ -59,6 +59,9 @@ type WholesaleProduct = {
   gstPercent: number;
   productType: 'single' | 'variant' | 'loose';
   barcode: string;
+  // Printable own-reference code, same field Dukan/Vyapar already expose
+  // (see Barcode Print Settings' "Other Code" toggle).
+  otherCode?: string;
   mrp: number;
   sellingPrice: number;
   wholesaleCost: number;
@@ -163,6 +166,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     gstPercent: 0,
     productType: 'single',
     barcode: '',
+    otherCode: '',
     mrp: 0,
     sellingPrice: 0,
     wholesaleCost: 0,
@@ -491,6 +495,7 @@ export default function WholesaleProductsUI() {
       category: p.category || '',
       hsnCode: p.hsnCode || '',
       barcode: p.barcode || '',
+      otherCode: p.otherCode || '',
       baseUnit: p.baseUnit || bizConfig.defaultUnits[0] || 'PCS',
       gstPercent: p.gstPercent || 0,
       mrp: p.mrp || 0,
@@ -741,6 +746,7 @@ export default function WholesaleProductsUI() {
       const payload = {
         ...form,
         barcode: form.barcode?.trim() || null,
+        otherCode: form.otherCode?.trim() || null,
         productType: form.productType || 'single',
         // When not a variant product, explicitly send empty variants so the server does not auto-promote to variant
         variants: isVariantProduct ? effectiveVariants : [],
@@ -2548,6 +2554,17 @@ export default function WholesaleProductsUI() {
                           <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('barcodeSku') || 'Barcode / SKU'}</label>
                           <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors font-mono"
                             value={form.barcode || ''} onChange={e => setForm({...form, barcode: e.target.value})} placeholder={t('scanOrTypeBarcode') || "Scan or type barcode"} />
+                        </div>
+                        {/* Other Code — same printable own-reference field Dukan/Vyapar
+                            already have (Barcode Print Settings' "Other Code" toggle
+                            prints it on the label); Udyog never had it. */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                            {t('otherCode') || 'Other Code'} <span className="font-medium normal-case text-slate-400">{t('otherCodeOptional') || '(optional)'}</span>
+                          </label>
+                          <input className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 dark:text-white shadow-sm transition-colors font-mono"
+                            value={form.otherCode || ''} onChange={e => setForm({...form, otherCode: e.target.value})} placeholder={t('otherCodePlaceholder') || 'Your own reference code'} />
+                          <p className="text-[10px] text-slate-400 mt-1">{t('otherCodeHint') || 'A printable reference — write it once here and turn on "Other Code" in Barcode Print Settings to show it on the label.'}</p>
                         </div>
                         {/* MRP moved first — it anchors both Cost (via
                             purchaseDiscountPercent) and Wholesale (via
