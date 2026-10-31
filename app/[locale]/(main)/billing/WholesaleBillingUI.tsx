@@ -178,15 +178,30 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
   //        'inclusive' = GST on top (item.price = base*(1+slab%), gstPercent = slab)
   const [mode, setMode] = useState<'inclusive' | 'exclusive'>('exclusive');
 
-  // On first mount: capture the product's natural GST slab then start in Excl mode
-  // (selling price shown as-is, no GST applied until the user opts in).
+  // On first mount: respect the product's OWN configured GST (set at
+  // product-add time via the Including/Excluding GST toggle), instead of
+  // always wiping it to Excl — that forced the cashier to manually re-apply
+  // GST on every single line of every GST bill. Still fully editable per
+  // line below (switchMode/changeGstSlab) for a one-off exception.
   useEffect(() => {
     if (initDone.current) return;
     initDone.current = true;
     const naturalSlab = Number(item.gstPercent) || 0;
-    if (naturalSlab > 0) {
-      savedSlabRef.current = naturalSlab;
-      updateGstPercent(item.id, 0, lineRef(item));
+    if (naturalSlab > 0) savedSlabRef.current = naturalSlab;
+    if (!isGstBill || naturalSlab <= 0) {
+      // Non-GST bill (or product has no GST slab): no GST on this line.
+      if (naturalSlab > 0) updateGstPercent(item.id, 0, lineRef(item));
+      return;
+    }
+    if (item.gstInclusive) {
+      // Product's price already has GST baked in — it's already the final
+      // amount, no markup needed, just surface the Incl mode + rate.
+      setMode('inclusive');
+    } else {
+      // Product's price excludes GST — add it on top, same math switchMode
+      // uses, so the GST bill actually charges tax by default.
+      updatePrice(item.id, Math.round(toInclusivePrice(item.price, naturalSlab)), lineRef(item));
+      setMode('inclusive');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1255,7 +1270,16 @@ export default function WholesaleBillingUI() {
     return Number(product?.costPrice) || Number(product?.wholesaleCost) || 0;
   }, []);
 
-  // When Wholesale/Retail toggle changes, update all prices in cart
+  // When Wholesale/Retail toggle changes, update all prices in cart.
+  // item.gstPercent > 0 only ever happens together with item.price already
+  // carrying that GST markup (CartPriceInput's switchMode/mount effect keep
+  // the two in lockstep — gstPercent resets to 0 the instant GST is turned
+  // off). Re-deriving just the Wholesale/Retail BASE here and writing it to
+  // item.price directly would silently drop that markup — a GST-billed line
+  // would re-price to its bare base the moment the cashier flipped this
+  // toggle, saving a smaller, wrong amount at checkout. Re-apply the same
+  // markup to the new base so the swap only ever changes Wholesale↔Retail,
+  // never the GST state.
   const prevIsWholesale = useRef(isWholesale);
   useEffect(() => {
     if (prevIsWholesale.current !== isWholesale) {
@@ -1263,7 +1287,9 @@ export default function WholesaleBillingUI() {
       items.forEach(item => {
         const product = products.find(p => p.id === item.id);
         if (product) {
-          const newPrice = getPrice(product, item.variant || undefined, isWholesale);
+          const newBase = getPrice(product, item.variant || undefined, isWholesale);
+          const gstPercent = Number(item.gstPercent) || 0;
+          const newPrice = Math.round(gstPercent > 0 ? toInclusivePrice(newBase, gstPercent) : newBase);
           if (item.price !== newPrice) {
             updatePrice(item.id as any, newPrice, lineRef(item));
           }
@@ -1456,6 +1482,8 @@ export default function WholesaleBillingUI() {
         fgPackBreakdown: fgLotInfo?.packBreakdown?.length ? fgLotInfo.packBreakdown : undefined,
         // Carried for GST invoices (per-item rate + HSN). Harmless on non-GST bills.
         gstPercent: Number(product.gstPercent ?? product.gst_percent ?? 0) || 0,
+        // Drives CartPriceInput's Incl/Excl default — see the mount effect there.
+        gstInclusive: !!product.gstInclusive,
         hsnCode: product.hsnCode ?? product.hsn_code ?? '',
         // MRP travels with the line so the cart can flag the wholesaler's
         // "party discount %" off list price per row (mnemonic for the deal).

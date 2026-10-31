@@ -57,6 +57,10 @@ type WholesaleProduct = {
   category: string;
   hsnCode: string;
   gstPercent: number;
+  // Whether sellingPrice/wholesaleCost already have GST baked in (true) or
+  // GST is added on top at billing time (false). Drives the Incl/Excl
+  // default in WholesaleBillingUI's CartPriceInput.
+  gstInclusive?: boolean;
   productType: 'single' | 'variant' | 'loose';
   barcode: string;
   // Printable own-reference code, same field Dukan/Vyapar already expose
@@ -164,6 +168,7 @@ function buildEmptyProduct(bizType: string): Partial<WholesaleProduct> {
     category: '',
     hsnCode: '',
     gstPercent: 0,
+    gstInclusive: false,
     productType: 'single',
     barcode: '',
     otherCode: '',
@@ -498,6 +503,8 @@ export default function WholesaleProductsUI() {
       otherCode: p.otherCode || '',
       baseUnit: p.baseUnit || bizConfig.defaultUnits[0] || 'PCS',
       gstPercent: p.gstPercent || 0,
+      // Nullish (not ||) — false is a deliberate "Excluding GST" choice, not "not set".
+      gstInclusive: p.gstInclusive ?? false,
       mrp: p.mrp || 0,
       sellingPrice: p.sellingPrice || 0,
       wholesaleCost: p.wholesaleCost || 0,
@@ -1824,6 +1831,29 @@ export default function WholesaleProductsUI() {
                         <option value={28}>28%</option>
                       </select>
                     </div>
+                    {Number(form.gstPercent) > 0 && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">{t('gstMode') || 'Price Is'}</label>
+                      <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
+                        {(['exclusive', 'inclusive'] as const).map(mode => (
+                          <button key={mode} type="button"
+                            onClick={() => setForm({ ...form, gstInclusive: mode === 'inclusive' })}
+                            className={cn('flex-1 py-1.5 text-xs font-semibold rounded-md transition-all',
+                              (!!form.gstInclusive === (mode === 'inclusive'))
+                                ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300')}
+                          >
+                            {mode === 'inclusive' ? (t('gstIncluding') || 'Including GST') : (t('gstExcluding') || 'Excluding GST')}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {form.gstInclusive
+                          ? (t('gstIncludingHint') || 'This price already has GST included — billing shows it as-is.')
+                          : (t('gstExcludingHint') || 'GST is added on top of this price at billing time.')}
+                      </p>
+                    </div>
+                    )}
                     {!isMillShop && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
