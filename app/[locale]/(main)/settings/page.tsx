@@ -223,10 +223,20 @@ function SettingsPageInner() {
   const [cancelReason, setCancelReason]       = useState('');
   const [cancelling, setCancelling]           = useState(false);
   const [cancelDone, setCancelDone]           = useState(false);
+  // Keys must match the Prisma/API shape exactly (camelCase) — GET returns
+  // dailySummaryEnabled/lowStockAlertEnabled/alertTime and PATCH's allowedFields
+  // whitelist only recognizes those exact names. This object used to mix in
+  // snake_case defaults (daily_summary_enabled, low_stock_alert_enabled,
+  // alert_time), which meant the GET response's real camelCase values never
+  // overwrote them (so the toggles always showed the hardcoded default,
+  // never the saved setting) and every PATCH silently dropped those three
+  // fields (the backend whitelist doesn't recognize the snake_case keys) —
+  // nothing the user picked here was ever actually saved or enforced by the
+  // daily-summary/stock-alerts cron jobs.
   const [settings, setSettings] = useState({
-    daily_summary_enabled: true,
-    low_stock_alert_enabled: true,
-    alert_time: '08:00',
+    dailySummaryEnabled: true,
+    lowStockAlertEnabled: true,
+    alertTime: '08:00',
     udharWhatsAppEnabled: false,
     udharEmailEnabled: false
   });
@@ -861,8 +871,8 @@ function SettingsPageInner() {
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
-                checked={!!settings.daily_summary_enabled}
-                onChange={e => setSettings({...settings, daily_summary_enabled: e.target.checked})}
+                checked={!!settings.dailySummaryEnabled}
+                onChange={e => setSettings({...settings, dailySummaryEnabled: e.target.checked})}
               />
             </label>
 
@@ -871,8 +881,8 @@ function SettingsPageInner() {
               <input 
                 type="checkbox" 
                 className="w-5 h-5 accent-emerald-500" 
-                checked={!!settings.low_stock_alert_enabled}
-                onChange={e => setSettings({...settings, low_stock_alert_enabled: e.target.checked})}
+                checked={!!settings.lowStockAlertEnabled}
+                onChange={e => setSettings({...settings, lowStockAlertEnabled: e.target.checked})}
               />
             </label>
 
@@ -910,8 +920,8 @@ function SettingsPageInner() {
               <input 
                 type="time" 
                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-slate-900 dark:text-slate-200 focus:ring-1 focus:ring-emerald-500 outline-none transition-colors"
-                value={settings.alert_time}
-                onChange={e => setSettings({...settings, alert_time: e.target.value})}
+                value={settings.alertTime || '08:00'}
+                onChange={e => setSettings({...settings, alertTime: e.target.value})}
               />
               <p className="text-[10px] text-slate-500 italic">{t('notifTimeHint')}</p>
             </div>

@@ -198,7 +198,7 @@ This repo deploys as **one Next.js server**. The repo root is the app, so deploy
 | Package manager | npm |
 | Node version | 20.x or 22.x |
 
-**Env vars:** set `DATABASE_URL`, a strong `SECRET_KEY`, `ADMIN_SECRET_KEY`, `NEXT_PUBLIC_API_URL` (`/api/v1`), `NEXT_PUBLIC_FRONTEND_URL`/`FRONTEND_URL`/`APP_URL` (app domain), `NEXT_PUBLIC_LANDING_URL`/`LANDING_URL` (landing domain), plus optional PayU/SMTP/OpenRouter/`CRON_SECRET`.
+**Env vars:** set `DATABASE_URL`, a strong `SECRET_KEY`, `ADMIN_SECRET_KEY`, `NEXT_PUBLIC_API_URL` (`/api/v1`), `NEXT_PUBLIC_FRONTEND_URL`/`FRONTEND_URL`/`APP_URL` (app domain), `NEXT_PUBLIC_LANDING_URL`/`LANDING_URL` (landing domain), plus optional PayU/SMTP/OpenRouter. Set `CRON_SECRET` too and wire up the scheduler in **Scheduling** below — without it, Daily Alerts (Yesterday's Profit, Low Stock, subscription reminders) are built but never actually run.
 
 After first deploy, create tables by running `npx prisma db push` once against the production `DATABASE_URL` (e.g. from your machine).
 
@@ -220,11 +220,7 @@ pm2 start npm --name vyapar-app -- start    # next start on port 3000
 pm2 save && pm2 startup
 ```
 
-Then reverse-proxy `app.yourdomain.com` → `127.0.0.1:3000` in Nginx, add HTTPS with `certbot --nginx`, and schedule the subscription cron:
-
-```cron
-0 2 * * * curl -s -H "Authorization: Bearer <CRON_SECRET>" https://app.yourdomain.com/api/v1/cron/process-subscriptions > /dev/null 2>&1
-```
+Then reverse-proxy `app.yourdomain.com` → `127.0.0.1:3000` in Nginx, add HTTPS with `certbot --nginx`, and schedule the crons — see **Scheduling** below.
 
 ### Option 3: Docker / any Node host
 
@@ -236,6 +232,43 @@ curl -X POST https://<app-domain>/api/v1/admin/register \
   -H "Content-Type: application/json" \
   -d '{"fullName":"Admin","email":"admin@example.com","password":"strong-pass","secretKey":"<ADMIN_SECRET_KEY>"}'
 ```
+
+## Scheduling
+
+Three features depend on a scheduler calling the app on a timer — **none of
+them run on their own**:
+
+| Job | What it does | Needs to run |
+|-----|---------------|---------------|
+| Daily Summary ("Yesterday's Profit") | Notifies each user whose Settings → Daily Alerts has it on, in the hour matching their chosen Alert Time (IST) | Hourly |
+| Low Stock / Expiry alerts | Low stock, batch expiry, product expiry | Hourly (each alert is deduped 24h–7d, so hourly is just "check in") |
+| Subscription reminders/expiry | Renewal nudges + auto-expire | Hourly (deduped per user for 20h) |
+
+All three are combined into **one endpoint** so a single scheduled job covers
+everything: `GET /api/v1/cron/tick`, protected by `CRON_SECRET` (same auth as
+every `/api/v1/cron/*` route — `Authorization: Bearer <CRON_SECRET>` or
+`?secret=<CRON_SECRET>`). Call it **hourly**.
+
+**If you have shell/crontab access** (VPS, Docker, any self-managed host):
+
+```cron
+0 * * * * curl -s -H "Authorization: Bearer <CRON_SECRET>" https://app.yourdomain.com/api/v1/cron/tick > /dev/null 2>&1
+```
+
+**If you don't** (managed PaaS, e.g. Hostinger's Option 1 above, with no
+crontab) — use a free external scheduler instead, pointed at the same URL,
+hourly:
+
+- [cron-job.org](https://cron-job.org) — create a job, URL
+  `https://app.yourdomain.com/api/v1/cron/tick?secret=<CRON_SECRET>`,
+  schedule "every hour".
+- A GitHub Actions workflow on a `schedule:` cron trigger, calling the same
+  URL with `curl`.
+- Any other uptime/cron-as-a-service tool that can hit a URL on a timer.
+
+The individual routes (`/api/v1/cron/stock-alerts`, `/api/v1/cron/daily-summary`,
+`/api/v1/cron/process-subscriptions`) still exist standalone for manual
+testing/debugging — `/tick` just calls all three.
 
 ## API Reference
 
@@ -253,7 +286,7 @@ All endpoints under `/api/v1`. Auth via `Authorization: Bearer <JWT>`; multi-sho
 | Reports | `/reports/summary` · `/reports/sales-trend` · `/reports/top-products` · `/reports/low-stock` · `/reports/export` |
 | AI | `POST /ai/chat` · `GET /ai/insights` |
 | Payments | `POST /payments/create-order` · `/payments/payu-success` · `/payments/cancel-subscription` · `/payments/refund` |
-| Cron | `GET /cron/process-subscriptions` (CRON_SECRET protected) |
+| Cron | `GET /cron/tick` (runs all three jobs — see **Scheduling**) · `/cron/process-subscriptions` · `/cron/daily-summary` · `/cron/stock-alerts` (all `CRON_SECRET` protected) |
 | Admin | `POST /admin/login` · `/admin/register` · `GET /admin/analytics` · `/admin/users` · `PATCH /admin/users/[id]/plan` |
 
 ## Use Cases
