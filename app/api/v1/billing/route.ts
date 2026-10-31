@@ -336,6 +336,13 @@ export const POST = handle(async (req) => {
               offlineRefNumber,
               billType,
               gstAmount,
+              // Legacy (non-mill) bills never stored the rupee discount
+              // amount anywhere — only baked it into the item prices/total —
+              // so the invoice detail page had nothing to show afterward.
+              // Mill billing already writes this (see millSale.ts); do the
+              // same here from the same calculateInvoice() result used to
+              // derive totalAmount above.
+              discountAmount: calcResult.totalDiscount || null,
               gstDetails: body.gst_details ?? undefined,
               billImageUrl: body.bill_image_url || null,
               isManual: body.is_manual === true,

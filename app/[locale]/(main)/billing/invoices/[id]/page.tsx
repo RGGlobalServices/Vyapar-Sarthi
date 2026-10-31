@@ -171,6 +171,10 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
 
   const items = Array.isArray(invoice.items) ? invoice.items : [];
   const totalAmount = Number(invoice.total_amount) || 0;
+  const discountAmount = Number(invoice.discount_amount) || 0;
+  const gstAmount = Number(invoice.gst_amount) || 0;
+  const chargesTotal = Number(invoice.charges_total) || 0;
+  const roundOffAmount = Number(invoice.round_off_amount) || 0;
 
   const billData = {
     items: items.map((i: any) => ({
@@ -354,6 +358,53 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <span className="text-slate-500 font-medium tracking-tight">{t('totalItems')}</span>
                   <span className="text-slate-900 dark:text-slate-100 font-bold">{items.length}</span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500 font-medium tracking-tight">{t('billType')}</span>
+                  <span className={cn(
+                    "font-bold uppercase tracking-wider text-xs",
+                    billData.billType === 'gst' ? "text-indigo-500" : "text-slate-500"
+                  )}>
+                    {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
+                  </span>
+                </div>
+                {/* Wholesale / Retail — only meaningful for Udyog & Bada Udyog,
+                    and only when pricingMode was actually recorded (bills
+                    saved before this field existed show nothing, not a guess). */}
+                {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium tracking-tight">{t('pricingType')}</span>
+                    <span className={cn(
+                      "font-bold uppercase tracking-wider text-xs",
+                      pricingMode === 'wholesale' ? "text-purple-500" : "text-teal-500"
+                    )}>
+                      {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
+                    </span>
+                  </div>
+                )}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium tracking-tight">{t('discountApplied')}</span>
+                    <span className="text-orange-500 font-bold">− ₹{discountAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {gstAmount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium tracking-tight">{t('gstAmount')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{gstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {chargesTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium tracking-tight">{t('chargesTotal')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{chargesTotal.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                {roundOffAmount !== 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium tracking-tight">{t('roundOff')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{roundOffAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500 font-medium tracking-tight">{t('paymentStatus')}</span>
                   <span className={cn(
