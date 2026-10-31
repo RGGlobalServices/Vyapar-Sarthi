@@ -831,23 +831,6 @@ function StandardBillingUI() {
     }
   }, [addItem, setLineBatch, bizConfig.hasSizes]);
 
-  // FIFO nudge for a manually-added item (search tap / variant tile) — the
-  // scan path above already nudges by comparing the SCANNED batch to the
-  // oldest one; a manual add has no scanned batch to compare, so this just
-  // checks whether the product has more than one live batch and, if so,
-  // names the oldest. Fired after the item is already in the cart (never
-  // blocks the add) and fails silently — it's an informational hint, not a
-  // step the sale depends on.
-  const checkFifoHintOnAdd = useCallback(async (product: any) => {
-    if (!product?.id) return;
-    try {
-      const res = await api.get(`/products/${product.id}/batch-hint`);
-      const oldest = res.data?.oldestBatch;
-      if (oldest) {
-        setScanFeedback({ status: 'nudge', text: t('fifoNudge', { name: product.name, batch: oldest.batchNumber || '' }) || `Older stock of ${product.name} is available — sell that lot first if possible.` });
-      }
-    } catch { /* best-effort hint only */ }
-  }, [t]);
 
   const handleScan = useCallback(async (barcode: string) => {
     const raw = String(barcode).trim();
@@ -900,14 +883,7 @@ function StandardBillingUI() {
         // batch (matched_batch) pins this line to that exact purchased lot.
         addToCart(found, found.matched_variant || undefined, false, found.matched_batch || undefined);
         playScanBeep(true);
-        if (found.matched_batch && found.matched_batch.isOldest === false) {
-          // Non-blocking nudge only — the shopkeeper can still complete the
-          // sale with the batch they scanned, this just flags that an older
-          // lot exists so it isn't left to expire/go stale on the shelf.
-          setScanFeedback({ status: 'nudge', text: t('fifoNudge', { name: found.name, batch: found.matched_batch.batchNumber || '' }) || `Older stock of ${found.name} is available — sell that lot first if possible.` });
-        } else {
-          setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
-        }
+        setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });
         return;
       }
       throw new Error('not found');
@@ -1369,7 +1345,7 @@ function StandardBillingUI() {
                 {searchResults.map((product) => (
                   <button
                     key={product.id}
-                    onClick={() => { addToCart(product); checkFifoHintOnAdd(product); }}
+                    onClick={() => addToCart(product)}
                     className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 last:border-0"
                   >
                     <div>
@@ -1637,7 +1613,7 @@ function StandardBillingUI() {
                   // batch lookup, price — a sibling size shown at qty 0 is a
                   // real product, so adding it goes through the real flow too.
                   const product = products.find((p: any) => p.id === productId);
-                  if (product) { addToCart(product, variantKey); checkFifoHintOnAdd(product); }
+                  if (product) addToCart(product, variantKey);
                 }}
                 onDecrement={(productId, variantKey, newQty) => {
                   if (newQty <= 0) removeItem(productId, variantKey);
@@ -2512,7 +2488,6 @@ function StandardBillingUI() {
                           onClick={() => {
                             if (line) { updateQuantity(line.id, inCart + 1, lineRef(line)); return; }
                             addToCart(variantSelectionProduct, key, false, variantSelectionLotRef.current);
-                            checkFifoHintOnAdd(variantSelectionProduct);
                           }}
                           className="py-2.5 flex flex-col items-center justify-center gap-0.5 active:scale-95 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-900 dark:text-slate-100"
                         >
@@ -2560,7 +2535,6 @@ function StandardBillingUI() {
                   const val = new FormData(e.currentTarget).get('custom_size') as string;
                   if (val && val.trim()) {
                     addToCart(variantSelectionProduct, val.trim(), false, variantSelectionLotRef.current);
-                    checkFifoHintOnAdd(variantSelectionProduct);
                     (e.currentTarget as HTMLFormElement).reset();
                   }
                 }} className="flex gap-2">
