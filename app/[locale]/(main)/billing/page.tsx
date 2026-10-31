@@ -813,9 +813,19 @@ function StandardBillingUI() {
           const resolvedCost = Number(first.costPrice) > 0 ? Number(first.costPrice) : undefined;
           // Use named batchNumber if set; otherwise fall back to positional label ("Lot 1")
           const displayBatchNumber = first.batchNumber || (batches.length > 1 ? `Lot 1` : null);
-          // With several lots, the old lot is sold first AT ITS OWN price; a single lot keeps the current shelf price.
-          const lotPrice = batches.length > 1 && Number(first.sellingPrice) > 0 ? Number(first.sellingPrice) : undefined;
-          setLineBatch(product.id, variant, { batchId: first.id, batchNumber: displayBatchNumber, cost: resolvedCost, price: lotPrice });
+          // The product's own shelf price (sellingPrice) is the single source
+          // of truth for what the customer is charged. A lot's own stored
+          // sellingPrice can be stale or GST-inclusive from when it was
+          // purchased — silently swapping it in here (as this used to do for
+          // any product with 2+ lots) is exactly the "₹1,199 in stock but
+          // ₹1,278.93 in the cart" bug: the shopkeeper never touched price,
+          // never picked a lot, yet got charged a different, unexplained
+          // amount. Cost/batch pinning below still happens (needed for FIFO
+          // stock + profit tracking); only the price override is removed.
+          // The explicit "Lot ↕" picker (shopkeeper deliberately selects an
+          // older/cheaper lot) is a separate, intentional price override and
+          // is untouched.
+          setLineBatch(product.id, variant, { batchId: first.id, batchNumber: displayBatchNumber, cost: resolvedCost });
         }
         // Cache even when empty so repeated adds don't re-fetch
         batchCacheRef.current.set(String(product.id), batches);
