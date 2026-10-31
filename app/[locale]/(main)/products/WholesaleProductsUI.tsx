@@ -2320,13 +2320,35 @@ export default function WholesaleProductsUI() {
                           setVariants(rebuildVariants(gridColors, next, builderValue));
                         }}
                         value={builderValue}
-                        onChange={next => setVariants(rebuildVariants(gridColors, builderSizes, next))}
+                        // Keyed off `next` itself, NOT rebuilt from gridColors/builderSizes:
+                        // SimpleVariantBuilder.removeSize() fires onSizesChange() AND this
+                        // onChange() back-to-back in the same click, both closures capturing
+                        // the SAME pre-click builderSizes. Rebuilding here from that stale
+                        // (still-9-size) list silently resurrected the row onSizesChange had
+                        // just dropped the variants array back to — the size chip's X never
+                        // visibly removed it. next's own keys are already authoritative (every
+                        // caller — setQty, applyAll, and removeSize's cleanup — only ever
+                        // updates or drops existing row keys, never invents new ones), so just
+                        // keep rows still present in next and refresh their stock from it.
+                        onChange={next => setVariants(prev => prev
+                          .filter(v => Object.prototype.hasOwnProperty.call(next, variantKeyOf(v)))
+                          .map(v => next[variantKeyOf(v)] !== undefined ? { ...v, stock: next[variantKeyOf(v)] } : v)
+                        )}
                         baseValue={form.id ? baseVariantStock : undefined}
                         sizePrices={builderPrices}
-                        onSizePricesChange={next => setVariants(variants.map(v => {
-                          const pr = next[variantKeyOf(v)];
-                          return pr ? { ...v, mrp: pr.mrp, sellingPrice: pr.sellingPrice, wholesalePrice: pr.cost } : v;
-                        }))}
+                        // Same stale-closure trap as onChange above, and the LAST of
+                        // removeSize()'s 3 calls (onSizesChange, onChange, then this) — its
+                        // old `variants.map()` (not the functional setVariants form) ran
+                        // over the pre-click 9-row array and, since .map() never drops
+                        // elements, re-inserted the just-removed row right back as the
+                        // final word, even after the two fixes above got it right.
+                        onSizePricesChange={next => setVariants(prev => prev
+                          .filter(v => Object.prototype.hasOwnProperty.call(next, variantKeyOf(v)))
+                          .map(v => {
+                            const pr = next[variantKeyOf(v)];
+                            return pr ? { ...v, mrp: pr.mrp, sellingPrice: pr.sellingPrice, wholesalePrice: pr.cost } : v;
+                          })
+                        )}
                         perSizePricing={!sameVariantPricing}
                         colorOptions={bizConfig.colorChart || []}
                         sizeChart={baseSizeChart}
