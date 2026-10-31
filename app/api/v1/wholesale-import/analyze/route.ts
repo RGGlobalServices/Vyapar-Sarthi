@@ -179,14 +179,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No files uploaded' }, { status: 400 });
     }
 
-    // ── OpenAI (primary) ─────────────────────────────────────────────────────
+    // ── OpenAI (secondary / fallback) ────────────────────────────────────────
     const openaiKey = process.env.OPENAI_API_KEY || '';
     const openaiClient = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
     // gpt-4o gives significantly better vision accuracy over gpt-4o-mini for
     // handwritten / non-standard Indian mill bills. Override via env to control cost.
     const openaiModel = process.env.IMPORT_OPENAI_MODEL || 'gpt-4o';
 
-    // ── Gemini (secondary / fallback) ────────────────────────────────────────
+    // ── Gemini (primary) ─────────────────────────────────────────────────────
     // Multi-key support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2 … on quota exhaustion.
     const geminiKeys = [
       process.env.GEMINI_API_KEY,
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
     const geminiKey = geminiKeys[0] || '';
 
     if (!openaiKey && !geminiKey) {
-      return NextResponse.json({ error: 'No AI provider configured. Set OPENAI_API_KEY (primary) or GEMINI_API_KEY (fallback) in .env.local.' }, { status: 500 });
+      return NextResponse.json({ error: 'No AI provider configured. Set GEMINI_API_KEY (primary) or OPENAI_API_KEY (fallback) in .env.local.' }, { status: 500 });
     }
     // Gemini clients — geminiClients[0] is primary; rest rotated on quota exhaustion.
     const geminiClients = geminiKeys.map(k => new GoogleGenAI({ apiKey: k }));
@@ -784,7 +784,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     type Task = { label: string; run: () => Promise<string> };
     const tasks: Task[] = [];
 
-    // Provider selection — OpenAI is primary, Gemini is secondary/fallback.
+    // Provider selection — Gemini is primary, OpenAI is secondary/fallback.
     const retryCount = Number(process.env.IMPORT_RETRY_COUNT ?? 0);
 
     // Provider-level fallback chain: Gemini → Nvidia → OpenRouter. Falls
@@ -1014,14 +1014,15 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // to the next provider instead of letting the bad response poison
     // downstream `collect()` parsing.
     textChunks.forEach((chunk, idx) => {
-      // OpenAI is primary for text (faster, reliable JSON mode); Gemini is fallback.
+      // Gemini is primary for text (multi-key rotation across GEMINI_API_KEY/_2/_3/_4
+      // means one expired/exhausted key doesn't stop the run); OpenAI is fallback.
       const openaiText = async () => assertJsonParseable(await callOpenAIText(buildPrompt(chunk)));
       const geminiText = async () => assertJsonParseable(await callGeminiText(buildPrompt(chunk)));
       tasks.push({
         label: `Text chunk ${idx + 1}/${textChunks.length}`,
         run: () => withFallback(
-          openaiClient ? openaiText : geminiText,
-          openaiClient ? [{ name: 'gemini', enabled: geminiClients.length > 0, run: geminiText }] : [],
+          geminiClients.length > 0 ? geminiText : openaiText,
+          geminiClients.length > 0 ? [{ name: 'openai', enabled: !!openaiClient, run: openaiText }] : [],
         ),
       });
     });
@@ -1029,18 +1030,18 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     const MAX_IMAGES = importConfig.maxImages; // each image = one page of a scanned/photographed doc
     const imagesToProcess = imageContents.slice(0, MAX_IMAGES);
     imagesToProcess.forEach((img: any, idx) => {
-      // OpenAI vision (primary) → Gemini vision (secondary) → Tesseract (last resort).
+      // Gemini vision (primary) → OpenAI vision (secondary) → Tesseract (last resort).
       const openaiVision = async () => assertJsonParseable(await callOpenAIVision(buildPrompt(''), img.mimeType, img.b64));
       const geminiVision = async () => assertJsonParseable(await callGeminiVision(buildPrompt(''), img.mimeType, img.b64));
       const tesseractVision = async () => assertJsonParseable(await callTesseractSalvage(img.b64, img.mimeType));
 
       const fallbacks = [
-        { name: 'gemini', enabled: geminiClients.length > 0, run: geminiVision },
+        { name: 'openai', enabled: !!openaiClient, run: openaiVision },
         { name: 'tesseract', enabled: true, run: tesseractVision },
       ];
       tasks.push({
         label: `Page/Image ${idx + 1}/${imagesToProcess.length}`,
-        run: () => withFallback(openaiClient ? openaiVision : geminiVision, openaiClient ? fallbacks : [{ name: 'tesseract', enabled: true, run: tesseractVision }]),
+        run: () => withFallback(geminiClients.length > 0 ? geminiVision : openaiVision, geminiClients.length > 0 ? fallbacks : [{ name: 'tesseract', enabled: true, run: tesseractVision }]),
       });
     });
 
