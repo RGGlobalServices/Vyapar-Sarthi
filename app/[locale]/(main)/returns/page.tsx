@@ -715,7 +715,15 @@ export default function ReturnsPage() {
                 {returnItems.some(i => i.returnQty > 0) && (
                   <button
                     type="button"
-                    onClick={() => setExchangeMode(v => !v)}
+                    onClick={() => {
+                      // Kick the products fetch off the moment Exchange opens,
+                      // instead of waiting for the search box to be focused —
+                      // by the time the cashier actually types, the list is
+                      // already there instead of the whole network round trip
+                      // sitting in the middle of their first keystroke.
+                      setExchangeMode(v => !v);
+                      loadExchangeProducts();
+                    }}
                     className={cn(
                       'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-colors',
                       exchangeMode
