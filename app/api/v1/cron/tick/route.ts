@@ -21,36 +21,44 @@ export const dynamic = 'force-dynamic';
  *     alertTime (IST) — see runDailySummary.
  *   - subscription reminders: deduped per user for 20h (see maybeNotify in
  *     lib/server/billing.ts).
- * A failure in one job is reported but does not stop the others from running.
+ *
+ * Responds immediately (202) and runs the three jobs in the background,
+ * concurrently, instead of awaiting them — scanning every shop's products/
+ * batches can take well past the ~30s hard timeout most free external
+ * schedulers enforce (e.g. cron-job.org's free plan). This deploys as one
+ * persistent Next.js server (see README "Deployment" — PM2/`next start`,
+ * not a serverless function that gets frozen after the response), so the
+ * unawaited work below keeps running on the Node event loop after the HTTP
+ * response is sent; each job logs its own completion/failure since there is
+ * no caller left waiting to read a result.
  */
 export async function GET(req: Request) {
   const denied = checkCronAuth(req);
   if (denied) return denied;
 
-  const results: Record<string, any> = {};
+  const startedAt = new Date().toISOString();
 
-  try {
-    results.stockAlerts = await runStockAlerts();
-  } catch (err: any) {
-    console.error('[CRON tick] stock-alerts failed:', err);
-    results.stockAlerts = { error: err.message };
-  }
+  // Fire-and-forget: deliberately not awaited so the response below returns
+  // immediately. Each job already logs its own failure internally.
+  void (async () => {
+    const results = await Promise.allSettled([
+      runStockAlerts().catch((err) => {
+        console.error('[CRON tick] stock-alerts failed:', err);
+        throw err;
+      }),
+      runDailySummary().catch((err) => {
+        console.error('[CRON tick] daily-summary failed:', err);
+        throw err;
+      }),
+      processDueSubscriptions().catch((err) => {
+        console.error('[CRON tick] process-subscriptions failed:', err);
+        throw err;
+      }),
+    ]);
+    console.log('[CRON tick] finished (started', startedAt, '):', results.map((r) => r.status));
+  })();
 
-  try {
-    results.dailySummary = await runDailySummary();
-  } catch (err: any) {
-    console.error('[CRON tick] daily-summary failed:', err);
-    results.dailySummary = { error: err.message };
-  }
-
-  try {
-    results.subscriptions = await processDueSubscriptions();
-  } catch (err: any) {
-    console.error('[CRON tick] process-subscriptions failed:', err);
-    results.subscriptions = { error: err.message };
-  }
-
-  return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), ...results });
+  return NextResponse.json({ ok: true, accepted: true, startedAt }, { status: 202 });
 }
 
 export const POST = GET;

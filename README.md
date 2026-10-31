@@ -270,6 +270,14 @@ The individual routes (`/api/v1/cron/stock-alerts`, `/api/v1/cron/daily-summary`
 `/api/v1/cron/process-subscriptions`) still exist standalone for manual
 testing/debugging — `/tick` just calls all three.
 
+`/tick` responds `202 {"ok":true,"accepted":true,...}` **immediately** and
+runs the three jobs in the background rather than waiting for them —
+scanning every shop can take past the ~30s hard timeout most free external
+schedulers enforce (e.g. cron-job.org's free plan). A 202 means the jobs
+were *started*, not that they finished; check server logs for `[CRON tick]`
+to confirm completion. The three standalone routes above still run
+synchronously and return full results, for manual testing.
+
 ## API Reference
 
 All endpoints under `/api/v1`. Auth via `Authorization: Bearer <JWT>`; multi-shop requests include `x-shop-id` (handled by the client).
