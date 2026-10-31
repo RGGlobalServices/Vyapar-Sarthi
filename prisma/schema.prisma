@@ -801,6 +801,23 @@ model PushSubscription {
   @@map("push_subscriptions")
 }
 
+// FCM device tokens — separate from PushSubscription (that model is the
+// browser's VAPID Web Push shape: endpoint/p256dh/auth). An FCM token is a
+// single opaque string per device/app-install, from either the web SDK
+// (getToken()) or the native Capacitor app (@capacitor/push-notifications'
+// 'registration' event) — same token shape either way, `platform` just
+// records which one so sendFcmPush can log/debug per channel.
+model DeviceToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String?   @map("user_id") @db.Uuid
+  token     String    @unique(map: "ix_device_tokens_token") @db.VarChar
+  platform  String?   @db.VarChar // 'web' | 'android' | 'ios'
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
 model NotificationSetting {
   userId               String   @id @map("user_id") @db.Uuid
   dailySummaryEnabled  Boolean? @map("daily_summary_enabled")

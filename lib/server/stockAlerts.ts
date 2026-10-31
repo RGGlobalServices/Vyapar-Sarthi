@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { sendWebPush } from '@/lib/server/push';
+import { sendPushAll } from '@/lib/server/pushAll';
 
 // Shared by the standalone /api/v1/cron/stock-alerts route and the unified
 // /api/v1/cron/tick scheduler (see README "Scheduling") — extracted so both
@@ -105,7 +105,7 @@ export async function runStockAlerts(): Promise<{ notificationsCreated: number }
         // Check user notification settings
         const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
         if (notifSettings?.lowStockAlertEnabled !== false) { // default true or strictly check true
-          await sendWebPush(ownerId, { title: alert.title, body: alert.message, url: alert.link });
+          await sendPushAll(ownerId, { title: alert.title, body: alert.message, url: alert.link });
         }
 
         notificationsCreated++;
@@ -150,7 +150,7 @@ export async function runStockAlerts(): Promise<{ notificationsCreated: number }
 
         const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
         if (notifSettings?.lowStockAlertEnabled !== false) {
-          await sendWebPush(ownerId, { title, body: message, url: `/stock` });
+          await sendPushAll(ownerId, { title, body: message, url: `/stock` });
         }
 
         notificationsCreated++;
@@ -216,7 +216,7 @@ export async function runStockAlerts(): Promise<{ notificationsCreated: number }
 
       const notifSettings = await prisma.notificationSetting.findUnique({ where: { userId: ownerId } });
       if (notifSettings?.lowStockAlertEnabled !== false) {
-        await sendWebPush(ownerId, { title, body: message, url: `/expiry` });
+        await sendPushAll(ownerId, { title, body: message, url: `/expiry` });
       }
 
       notificationsCreated++;

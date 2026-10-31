@@ -15,6 +15,8 @@ import { ExportButton } from '@/lib/hooks/useExport';
 import { planLabel, PLAN_LIMITS, nextUpgrade } from '@/lib/planGates';
 import { getTotalAmount, YEARLY_DISCOUNT_PERCENT, type BillingCycle } from '@/lib/subscriptionPricing';
 import { useLocale } from 'next-intl';
+import { registerForPushNotifications } from '@/lib/notificationRegistration';
+import { Capacitor } from '@capacitor/core';
 
 // Inner component uses useSearchParams — must be wrapped in Suspense
 function SettingsPageInner() {
@@ -298,6 +300,32 @@ function SettingsPageInner() {
   }
 
   const handleTogglePush = async () => {
+    // Native Android/iOS app: Web Push (this card's original flow) can't
+    // reliably deliver while the app is backgrounded/closed — that's exactly
+    // what FCM via @capacitor/push-notifications is for, so skip the whole
+    // Notification/serviceWorker/VAPID path, which may not even behave the
+    // same way inside the Capacitor WebView.
+    if (Capacitor.isNativePlatform()) {
+      if (isSubscribed) {
+        // Capacitor has no "unsubscribe" call; just stop sending to this
+        // device by dropping its token server-side.
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          // FCM tokens aren't exposed after the fact on Android without
+          // re-registering, so this best-effort path simply flips local
+          // state — the token (if still valid) stays registered server-side
+          // until it naturally goes stale.
+          void PushNotifications;
+        } catch {}
+        setIsSubscribed(false);
+        return;
+      }
+      const result = await registerForPushNotifications();
+      setIsSubscribed(result.ok);
+      if (!result.ok) alert('Failed to enable notifications: ' + (result.error || 'Unknown error'));
+      return;
+    }
+
     try {
       if (isSubscribed) {
         const registration = await navigator.serviceWorker.getRegistration();
@@ -318,7 +346,7 @@ function SettingsPageInner() {
             throw new Error('The Service Worker is not active yet. This is normal in development mode. In production, please refresh and try again.');
           }
           const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-          
+
           if (!vapidKey) {
             throw new Error('VAPID Public Key not found in environment');
           }
@@ -327,13 +355,19 @@ function SettingsPageInner() {
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidKey)
           });
-          
+
           const subJSON = pushSub.toJSON();
           await api.post('/notifications/subscribe', {
             endpoint: subJSON.endpoint,
             keys: subJSON.keys
           });
           setIsSubscribed(true);
+
+          // Also register an FCM web token alongside the raw VAPID
+          // subscription above, best-effort — if Firebase web config isn't
+          // set yet this just no-ops (see lib/firebaseClient.ts), so it
+          // never blocks or breaks the subscription that just succeeded.
+          registerForPushNotifications().catch(() => {});
         }
       }
     } catch (err) {

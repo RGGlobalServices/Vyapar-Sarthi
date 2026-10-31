@@ -1,5 +1,5 @@
 import prisma from '@/lib/server/prisma';
-import { sendWebPush } from '@/lib/server/push';
+import { sendPushAll } from '@/lib/server/pushAll';
 
 // Shared by the standalone /api/v1/cron/daily-summary route and the unified
 // /api/v1/cron/tick scheduler (see README "Scheduling").
@@ -76,7 +76,7 @@ export async function runDailySummary(opts?: { force?: boolean }): Promise<{ cou
         }
       });
 
-      await sendWebPush(setting.userId, { title, body: message, url: `/dashboard` });
+      await sendPushAll(setting.userId, { title, body: message, url: `/dashboard` });
       count++;
     }
   }
