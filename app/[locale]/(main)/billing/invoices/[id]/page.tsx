@@ -237,7 +237,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 <ArrowLeft size={24} />
               </Link>
               <div>
-                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
                   INV-{invoice.id.substring(0, 8).toUpperCase()}
                   <span className={cn(
                     "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
@@ -247,6 +247,31 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   )}>
                     {invoice.payment_type}
                   </span>
+                  {/* GST / Non-GST — every invoice, every package, so it's never
+                      ambiguous from the record alone which kind of bill this was. */}
+                  <span className={cn(
+                    "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
+                    billData.billType === 'gst'
+                      ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20"
+                      : "bg-slate-500/10 text-slate-500 border-slate-500/20"
+                  )}>
+                    {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
+                  </span>
+                  {/* Wholesale / Retail — Udyog & Bada Udyog only, where the
+                      billing screen actually offers that toggle. A party-linked
+                      sale (customer_id set) was billed in Wholesale pricing;
+                      a plain walk-in sale was Retail — see WholesaleBillingUI's
+                      `customer_id: isWholesale ? selectedParty!.id : null`. */}
+                  {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && (
+                    <span className={cn(
+                      "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
+                      invoice.customer_id
+                        ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
+                        : "bg-teal-500/10 text-teal-500 border-teal-500/20"
+                    )}>
+                      {invoice.customer_id ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
+                    </span>
+                  )}
                 </h1>
                 <p className="text-slate-500 text-sm font-medium mt-1">{t('recordCreatedOn', { date: new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}</p>
               </div>

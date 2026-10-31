@@ -632,6 +632,11 @@ export const GET = handle(async (req) => {
       round_off_amount: (s as any).roundOffAmount ?? null,
       is_manual: s.isManual,
       bill_image_url: s.billImageUrl,
+      // Udyog/Bada Udyog only: a party-linked sale (customer_id set) was
+      // billed in Wholesale pricing mode; a plain walk-in sale (customer_id
+      // null) was Retail — see WholesaleBillingUI's `customer_id: isWholesale
+      // ? selectedParty!.id : null`. The invoice list badge uses this.
+      customer_id: s.customerId || null,
       customer_name: s.customer?.name || null,
       customer_mobile: s.customer?.mobile || null,
       customer_email: s.customer?.email || null,

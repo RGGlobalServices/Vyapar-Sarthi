@@ -1272,6 +1272,34 @@ export default function WholesaleBillingUI() {
     }
   }, [isWholesale, products, getPrice, items, updatePrice]);
 
+  // A Non-GST bill must never retain a GST-loaded price: CartPriceInput's own
+  // Incl/Excl control only shows while isGstBill is true (so it can't be
+  // reached directly on a Non-GST bill), but a line that was switched to
+  // "Incl" (GST added on top — see CartPriceInput.switchMode) BEFORE the
+  // cashier flips the bill-type toggle to Non-GST would otherwise keep that
+  // GST-inflated item.price forever, since nothing else re-derives it. Strip
+  // the markup back to the pure wholesale/retail price the instant the bill
+  // becomes Non-GST. Mill (Bada Udyog) billing is untouched — it prices
+  // through its own calculateMillInvoice engine, not this gstPercent/price
+  // pair, and already handles GST/Non-GST switching correctly on its own.
+  const prevBillType = useRef(billType);
+  useEffect(() => {
+    if (isMill) return;
+    if (prevBillType.current !== billType) {
+      prevBillType.current = billType;
+      if (billType === 'non_gst') {
+        items.forEach(item => {
+          const gstPercent = Number(item.gstPercent) || 0;
+          if (gstPercent > 0) {
+            const base = toExclusivePrice(item.price, gstPercent);
+            updateGstPercent(item.id as any, 0, lineRef(item));
+            updatePrice(item.id as any, Math.round(base), lineRef(item));
+          }
+        });
+      }
+    }
+  }, [billType, isMill, items, updateGstPercent, updatePrice]);
+
   const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null, fgLotInfo?: { fgLotId: string | null; fgLotNumber: string | null; packBreakdown?: Array<{ packType: string; packKg: number; count: number }>; initialQty?: number } | null) => {
     // Instant feedback the moment ANY add is triggered — closes the search
     // dropdown and clears the box right away, before the (possibly slow,

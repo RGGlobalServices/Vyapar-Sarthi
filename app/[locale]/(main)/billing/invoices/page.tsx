@@ -50,6 +50,9 @@ interface Invoice {
   gst_details?: any;
   is_manual?: boolean | null;
   bill_image_url?: string | null;
+  // Udyog/Bada Udyog only: party-linked (set) = Wholesale pricing, walk-in
+  // (null) = Retail — see WholesaleBillingUI's customer_id assignment.
+  customer_id?: string | null;
 }
 
 interface InvoiceItem {
@@ -1021,10 +1024,19 @@ export default function InvoiceHistoryPage() {
                             <IndianRupee size={14} className="text-emerald-500" />
                           </div>
                           <div>
-                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight flex items-center gap-1.5">
+                            <p className="text-sm font-black text-slate-900 dark:text-slate-100 font-mono tracking-tight flex items-center gap-1.5 flex-wrap">
                               {inv.invoice_number || `INV-${inv.id.substring(0, 8).toUpperCase()}`}
-                              {inv.bill_type === 'gst' && (
+                              {inv.bill_type === 'gst' ? (
                                 <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-wider border border-indigo-500/20">GST</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-500 dark:text-slate-400 text-[8px] font-black uppercase tracking-wider border border-slate-500/20">Non-GST</span>
+                              )}
+                              {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && (
+                                inv.customer_id ? (
+                                  <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[8px] font-black uppercase tracking-wider border border-purple-500/20">{t('wholesaleSaleBadge') || 'Wholesale'}</span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[8px] font-black uppercase tracking-wider border border-teal-500/20">{t('retailSaleBadge') || 'Retail'}</span>
+                                )
                               )}
                               {(typeof inv.payment_details === 'object' && inv.payment_details?.source === 'job_work') && (
                                 <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[8px] font-black uppercase tracking-wider border border-blue-500/20" title={`Made from Job Work order ${inv.payment_details?.orderNumber || ''}`}>Job Work</span>
