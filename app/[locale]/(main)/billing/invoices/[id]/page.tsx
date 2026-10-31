@@ -154,6 +154,21 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     ? (typeof invoice.gst_details === 'string' ? JSON.parse(invoice.gst_details) : invoice.gst_details)
     : undefined;
 
+  // Wholesale vs Retail — NOT derivable from customer_id: the server
+  // auto-links/creates a Customer by name whenever one is typed (POST
+  // /billing), including for a plain Retail walk-in sale, so customer_id
+  // being set never safely means "this was a Wholesale sale". The real
+  // signal is pricingMode, which WholesaleBillingUI stamps into
+  // payment_details at the time of billing. Absent on bills saved before
+  // this field existed — those show no badge rather than a guess.
+  const paymentDetailsParsed = invoice.payment_details
+    ? (typeof invoice.payment_details === 'string' ? JSON.parse(invoice.payment_details) : invoice.payment_details)
+    : undefined;
+  const pricingMode: 'wholesale' | 'retail' | undefined =
+    paymentDetailsParsed?.pricingMode === 'wholesale' || paymentDetailsParsed?.pricingMode === 'retail'
+      ? paymentDetailsParsed.pricingMode
+      : undefined;
+
   const items = Array.isArray(invoice.items) ? invoice.items : [];
   const totalAmount = Number(invoice.total_amount) || 0;
 
@@ -258,18 +273,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                     {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
                   </span>
                   {/* Wholesale / Retail — Udyog & Bada Udyog only, where the
-                      billing screen actually offers that toggle. A party-linked
-                      sale (customer_id set) was billed in Wholesale pricing;
-                      a plain walk-in sale was Retail — see WholesaleBillingUI's
-                      `customer_id: isWholesale ? selectedParty!.id : null`. */}
-                  {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && (
+                      billing screen actually offers that toggle. No badge at
+                      all when pricingMode wasn't recorded (bills saved before
+                      this field existed) rather than guessing wrong. */}
+                  {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
                     <span className={cn(
                       "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
-                      invoice.customer_id
+                      pricingMode === 'wholesale'
                         ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
                         : "bg-teal-500/10 text-teal-500 border-teal-500/20"
                     )}>
-                      {invoice.customer_id ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
+                      {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
                     </span>
                   )}
                 </h1>

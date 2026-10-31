@@ -1004,6 +1004,17 @@ export default function InvoiceHistoryPage() {
                   const paid = inv.amount_paid ?? (inv.payment_type === 'Udhar' ? 0 : inv.total_amount);
                   const due = Math.max(0, inv.total_amount - paid);
                   const isDeleting = deleting === inv.id;
+                  // Wholesale vs Retail — NOT derivable from customer_id: the server
+                  // auto-links/creates a Customer by name whenever one is typed, including
+                  // for a plain Retail walk-in sale. The real signal is pricingMode,
+                  // stamped into payment_details by WholesaleBillingUI at billing time.
+                  const invPaymentDetails = inv.payment_details
+                    ? (typeof inv.payment_details === 'string' ? JSON.parse(inv.payment_details) : inv.payment_details)
+                    : undefined;
+                  const invPricingMode: 'wholesale' | 'retail' | undefined =
+                    invPaymentDetails?.pricingMode === 'wholesale' || invPaymentDetails?.pricingMode === 'retail'
+                      ? invPaymentDetails.pricingMode
+                      : undefined;
 
                   return (
                     <tr key={inv.id} className={cn('hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group', isDeleting && 'opacity-50 pointer-events-none')}>
@@ -1031,8 +1042,8 @@ export default function InvoiceHistoryPage() {
                               ) : (
                                 <span className="px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-500 dark:text-slate-400 text-[8px] font-black uppercase tracking-wider border border-slate-500/20">Non-GST</span>
                               )}
-                              {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && (
-                                inv.customer_id ? (
+                              {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && invPricingMode && (
+                                invPricingMode === 'wholesale' ? (
                                   <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[8px] font-black uppercase tracking-wider border border-purple-500/20">{t('wholesaleSaleBadge') || 'Wholesale'}</span>
                                 ) : (
                                   <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[8px] font-black uppercase tracking-wider border border-teal-500/20">{t('retailSaleBadge') || 'Retail'}</span>

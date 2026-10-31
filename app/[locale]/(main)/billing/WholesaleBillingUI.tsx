@@ -1953,8 +1953,13 @@ export default function WholesaleBillingUI() {
 
       // Method-specific reference data + credit terms, folded into the
       // flexible payment_details JSON the backend already stores — no
-      // schema change needed for any of this.
-      const paymentDetailsExtra: Record<string, any> = { method: paymentMethod };
+      // schema change needed for any of this. pricingMode also rides here:
+      // customer_id is NOT a safe signal for Wholesale vs Retail — the
+      // server auto-links/creates a Customer by name whenever one is typed
+      // (see POST /billing), including for a plain Retail walk-in sale, so
+      // an invoice billed in Retail mode could still end up with a
+      // customer_id set and get mis-badged "Wholesale Sale" downstream.
+      const paymentDetailsExtra: Record<string, any> = { method: paymentMethod, pricingMode: isWholesale ? 'wholesale' : 'retail' };
       if (paymentMethod === 'upi') { paymentDetailsExtra.upiApp = upiApp || undefined; paymentDetailsExtra.upiTxnId = upiTxnId || undefined; }
       if (paymentMethod === 'bank') { paymentDetailsExtra.bankName = bankName || undefined; paymentDetailsExtra.bankRefNo = bankRefNo || undefined; }
       if (paymentMethod === 'cheque') { paymentDetailsExtra.chequeNo = chequeNo || undefined; paymentDetailsExtra.chequeDate = chequeDate || undefined; paymentDetailsExtra.chequeBank = chequeBank || undefined; }
