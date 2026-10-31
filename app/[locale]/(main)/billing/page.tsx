@@ -189,15 +189,19 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
     item.gstInclusive ? 'inclusive' : 'exclusive'
   );
 
-  // What to display in the input field
+  // What to display in the input field.
+  // On Non-GST bills, always show the stored inclusive price as-is — the
+  // Excl/Incl toggle is hidden anyway, and GST-mode logic must never alter
+  // what the shopkeeper sees or stores for a non-GST transaction.
   const displayPrice = useMemo(() => {
     const p = Math.round(item.price * 100) / 100;
+    if (!isGstBill) return p;
     if (mode === 'exclusive' && gstPercent > 0) {
       return Math.round(toExclusivePrice(p, gstPercent) * 100) / 100;
     }
     return p;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, item.price, gstPercent]);
+  }, [isGstBill, mode, item.price, gstPercent]);
 
   const [localVal, setLocalVal] = useState(displayPrice.toString());
 
@@ -206,6 +210,11 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
   }, [displayPrice]);
 
   const writePrice = (typedVal: number) => {
+    if (!isGstBill) {
+      // Non-GST bill: typed value is the final price — no GST conversion
+      updatePrice(item.id, typedVal, lineRef(item));
+      return;
+    }
     if (mode === 'exclusive' && gstPercent > 0) {
       // Typed = base → store inclusive = base * (1 + gst%)
       updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent) * 100) / 100, lineRef(item));
@@ -233,16 +242,11 @@ const CartPriceInputRetail = ({ item, updatePrice, updateGstPercent, isGstBill }
     if (newMode === mode) return;
     const slab = gstPercent > 0 ? gstPercent : (savedSlabRef.current || 12);
     if (gstPercent === 0) updateGstPercent(item.id, slab, lineRef(item));
-
-    if (newMode === 'exclusive') {
-      // Incl → Excl: the currently visible price becomes the BASE price.
-      // e.g. displayed ₹209 (incl) → now BASE ₹209 → store inclusive ₹209*1.18 = ₹246.62
-      updatePrice(item.id, Math.round(toInclusivePrice(displayPrice, slab) * 100) / 100, lineRef(item));
-    } else {
-      // Excl → Incl: the currently visible base price becomes the TOTAL.
-      // e.g. displayed ₹177.68 (base) → now TOTAL ₹177.68 → store ₹177.68 directly
-      updatePrice(item.id, Math.round(displayPrice * 100) / 100, lineRef(item));
-    }
+    // Mode switch is PURELY cosmetic — only changes what the input SHOWS
+    // (exclusive = taxable base, inclusive = full customer price). The
+    // stored item.price is always the GST-inclusive amount and must NOT be
+    // mutated here, or switching modes would silently change what the
+    // customer is billed (900 → 945 on Incl→Excl, or 949 → 903 on Excl→Incl).
     setMode(newMode);
   };
 
