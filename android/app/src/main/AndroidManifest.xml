@@ -45,4 +45,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+    <!-- Android 13+ (API 33+) requires this declared permission before
+         PushNotifications.requestPermissions() can show the runtime prompt —
+         @capacitor/push-notifications' own bundled manifest only adds the
+         FCM MessagingService, not this. Without it, push silently never asks
+         and never arrives on API 33+ devices. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>
