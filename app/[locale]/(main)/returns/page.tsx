@@ -47,6 +47,9 @@ interface ExchangeProductRow {
   name: string;
   price: number;
   mrp: number;
+  gstPercent: number;
+  gstInclusive: boolean;
+  hsnCode: string;
   currentStock: number | null;
   variants: VariantOption[];
 }
@@ -56,9 +59,18 @@ interface ExchangeLine {
   productId: string;
   name: string;
   variant: string | null;
+  color: string;
+  size: string;
   qty: number;
   price: number;
   mrp: number;
+  // Same GST fields/semantics as the billing cart's CartPriceInput(Retail) —
+  // gstPercent carries the rate, mode decides whether `price` already has it
+  // baked in ('inclusive') or is the bare base with GST still to add
+  // ('exclusive'). Only shown/editable when the original bill was a GST
+  // invoice (see ExchangeGstEditor) — a non-GST bill's exchange stays flat.
+  gstPercent: number;
+  gstMode: 'inclusive' | 'exclusive';
   maxStock: number | null;
 }
 
@@ -148,6 +160,9 @@ export default function ReturnsPage() {
         name: p.name,
         price: Number(p.sellingPrice ?? p.mrp ?? 0),
         mrp: Number(p.mrp) || 0,
+        gstPercent: Number(p.gstPercent) || 0,
+        gstInclusive: !!p.gstInclusive,
+        hsnCode: p.hsnCode || '',
         currentStock: p.currentStock === null || p.currentStock === undefined ? null : Number(p.currentStock),
         variants: computeVariantOptions(p),
       }));
@@ -172,14 +187,26 @@ export default function ReturnsPage() {
         l.key === existing.key ? { ...l, qty: l.qty + 1 } : l
       ));
     } else {
+      const linePrice = variantOpt?.price ?? pickedProduct.price;
+      const naturalGst = pickedProduct.gstPercent || 0;
       const line: ExchangeLine = {
         key: `${pickedProduct.id}-${pickedVariant || 'plain'}-${Date.now()}`,
         productId: pickedProduct.id,
         name: pickedProduct.name,
         variant: variantKey,
+        color: variantOpt?.colour || '',
+        size: variantOpt?.size || '',
         qty: 1,
-        price: variantOpt?.price ?? pickedProduct.price,
+        // Same default this product carries at billing time: already-inclusive
+        // products keep their price as-is, an excluding-GST product's bare
+        // price gets the markup applied once, immediately — consistent with
+        // CartPriceInput's own mount behaviour on the billing screen.
+        price: naturalGst > 0 && !pickedProduct.gstInclusive
+          ? Math.round(linePrice * (1 + naturalGst / 100))
+          : linePrice,
         mrp: pickedProduct.mrp || 0,
+        gstPercent: naturalGst,
+        gstMode: pickedProduct.gstInclusive ? 'exclusive' : 'inclusive',
         maxStock: variantOpt ? variantOpt.stock : pickedProduct.currentStock,
       };
       setExchangeLines(prev => [...prev, line]);
@@ -195,6 +222,40 @@ export default function ReturnsPage() {
 
   function removeExchangeLine(key: string) {
     setExchangeLines(prev => prev.filter(l => l.key !== key));
+  }
+
+  // Same invariant CartPriceInput keeps on the billing screen: while
+  // gstMode='exclusive' ("Incl" label) price is ALWAYS the bare base, even
+  // with a rate already picked; while 'inclusive' ("Excl" label) price
+  // ALWAYS already has that rate baked in. Switching TO 'inclusive' marks
+  // the current (guaranteed-bare) price up — a real, visible addition every
+  // time; switching TO 'exclusive' strips it back out, so the next "Excl"
+  // click starts from the same bare base again instead of compounding GST
+  // on GST across repeated toggles.
+  function switchExchangeGstMode(key: string, newMode: 'inclusive' | 'exclusive') {
+    setExchangeLines(prev => prev.map(l => {
+      if (l.key !== key || l.gstMode === newMode) return l;
+      const slab = l.gstPercent || 0;
+      if (slab <= 0) return { ...l, gstMode: newMode };
+      const price = newMode === 'inclusive'
+        ? Math.round(l.price * (1 + slab / 100))
+        : Math.round(l.price / (1 + slab / 100));
+      return { ...l, gstMode: newMode, price };
+    }));
+  }
+
+  // 'inclusive' ("Excl"): keep the base constant, recompute the final price
+  // for the new rate. 'exclusive' ("Incl"): keep the final price constant —
+  // only the declared taxable/tax split changes.
+  function changeExchangeGstSlab(key: string, newSlab: number) {
+    setExchangeLines(prev => prev.map(l => {
+      if (l.key !== key) return l;
+      if (l.gstMode !== 'inclusive') return { ...l, gstPercent: newSlab };
+      const oldSlab = l.gstPercent || 0;
+      const base = oldSlab > 0 ? l.price / (1 + oldSlab / 100) : l.price;
+      const price = newSlab > 0 ? Math.round(base * (1 + newSlab / 100)) : Math.round(base);
+      return { ...l, gstPercent: newSlab, price };
+    }));
   }
 
   const downloadReturnPDF = (ret: any) => {
@@ -440,7 +501,13 @@ export default function ReturnsPage() {
         })),
         exchange_items: exchangeLines.map(l => ({
           product_id: l.productId,
-          variant: l.variant,
+          // Same fallback as the billing screen's checkout: a hand-typed
+          // colour/size (no formal variant picked) still needs to fold into
+          // `variant` to actually persist — the server has no separate
+          // color/size columns. `price` is always the final per-unit amount
+          // the customer pays regardless of how the Incl/Excl editor above
+          // arrived at it — no server-side change needed for that part.
+          variant: l.variant || (l.color ? `${l.color} / ${l.size || ''}` : (l.size || null)),
           quantity: l.qty,
           price: l.price,
           name: l.name
@@ -847,12 +914,53 @@ export default function ReturnsPage() {
                       <p className="text-xs text-slate-500 italic py-2">{t('noExchangeItemsYet') || 'No exchange items added yet.'}</p>
                     ) : (
                       <div className="space-y-2">
-                        {exchangeLines.map(line => (
+                        {exchangeLines.map(line => {
+                          const isGstExchange = bill?.bill_type === 'gst';
+                          return (
                           <div key={line.key} className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2">
                             <div className="w-full sm:w-auto sm:flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{line.name}</p>
-                              {line.variant && <p className="text-[10px] text-indigo-500 font-bold">{line.variant}</p>}
                               {line.mrp > 0 && <p className="text-[10px] text-slate-400">MRP ₹{line.mrp.toLocaleString('en-IN')}</p>}
+                              {/* Editable Color/Size — same free-text chips as the billing
+                                  cart (works even without a formal variant picked). */}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                <label className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-700 rounded-md px-1.5 py-0.5">
+                                  <span className="text-[9px] text-rose-400 dark:text-rose-300 font-medium">Color</span>
+                                  <input type="text" placeholder="—" value={line.color || ''}
+                                    onChange={e => updateExchangeLine(line.key, { color: e.target.value })}
+                                    className="bg-transparent outline-none text-[10px] w-12 text-slate-700 dark:text-slate-300 font-medium" />
+                                </label>
+                                <label className="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-md px-1.5 py-0.5">
+                                  <span className="text-[9px] text-indigo-400 dark:text-indigo-300 font-medium">Size</span>
+                                  <input type="text" placeholder="—" value={line.size || ''}
+                                    onChange={e => updateExchangeLine(line.key, { size: e.target.value })}
+                                    className="bg-transparent outline-none text-[10px] w-10 text-slate-700 dark:text-slate-300 font-medium" />
+                                </label>
+                              </div>
+                              {/* GST% + Incl/Excl — only for an exchange against a GST bill,
+                                  same editable toggle the billing cart has (CartPriceInput):
+                                  "Excl" keeps the base constant and adds GST on top; "Incl"
+                                  keeps the final price constant and only changes the
+                                  declared taxable/tax split. */}
+                              {isGstExchange && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <select value={line.gstPercent}
+                                    onChange={e => changeExchangeGstSlab(line.key, Number(e.target.value))}
+                                    className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 text-slate-500 dark:text-slate-400">
+                                    {[0, 5, 12, 18, 28].map(g => <option key={g} value={g}>{g}%</option>)}
+                                  </select>
+                                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
+                                    {(['inclusive', 'exclusive'] as const).map(m => (
+                                      <button key={m} type="button"
+                                        onClick={() => switchExchangeGstMode(line.key, m)}
+                                        className={cn('px-1 py-0.5 text-[9px] font-bold',
+                                          line.gstMode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400')}>
+                                        {m === 'inclusive' ? 'Excl' : 'Incl'}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
                               {/* Qty with +/- buttons */}
@@ -886,7 +994,7 @@ export default function ReturnsPage() {
                               </button>
                             </div>
                           </div>
-                        ))}
+                        );})}
                       </div>
                     )}
 
