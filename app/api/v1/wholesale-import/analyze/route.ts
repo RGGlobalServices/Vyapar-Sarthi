@@ -820,7 +820,15 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // provider identically and only waste quota.
     const isQuotaError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
-      return /\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(msg);
+      // 402 covers a prepaid-credits provider (Gemini's "Your prepayment
+      // credits are depleted") — functionally the same as a quota error for
+      // our purposes: this key/provider can't serve another request right
+      // now, so fall through to the next one instead of failing the whole
+      // import. Real incident: production's Gemini key ran out of prepaid
+      // credit and the import silently gave up without ever trying the
+      // configured OpenAI/Tesseract fallbacks, because a 402 matched none
+      // of the existing classifiers.
+      return /\b429\b|\b402\b|RESOURCE_EXHAUSTED|quota|rate.?limit|prepayment|insufficient.?(credit|balance|quota)|billing/i.test(msg);
     };
     const isParseError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1117,7 +1125,10 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       // failure than "parsed but returned nothing" — show the shopkeeper an
       // actionable message instead of a wall of raw provider JSON.
       const allJoined = perCallErrors.join('\n');
-      const isAllQuota = perCallErrors.length > 0 && perCallErrors.every(e => /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(e));
+      // Same classifier as isQuotaError above — a 402 "prepayment credits
+      // depleted" is a billing exhaustion, not a different failure class,
+      // and should get the same actionable message as a 429.
+      const isAllQuota = perCallErrors.length > 0 && perCallErrors.every(e => /\b429\b|\b402\b|RESOURCE_EXHAUSTED|quota|prepayment|insufficient.?(credit|balance|quota)|billing/i.test(e));
       const isAllInvalidJson = perCallErrors.length > 0 && perCallErrors.every(e => /INVALID_JSON|unexpected character|unexpected token|not.*valid json|invalid.*json/i.test(e));
       let friendly: string;
       let code: string | undefined;
@@ -1126,7 +1137,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         friendly = 'The AI could not read this bill in a structured way — every provider returned prose instead of the required JSON. This usually happens when the image is very unclear, rotated, or contains handwriting the model can\'t parse. Please try a clearer photo, or enter the bill manually.';
       } else if (isAllQuota) {
         code = 'AI_QUOTA_EXHAUSTED';
-        friendly = 'AI quota exhausted on all configured providers. Please check your OpenAI (OPENAI_API_KEY) or Gemini (GEMINI_API_KEY) quota, or add another key in .env.local. Your data is safe.';
+        friendly = 'AI quota or billing credits exhausted on all configured providers. Please check your OpenAI (OPENAI_API_KEY) or Gemini (GEMINI_API_KEY) quota/prepaid balance, or add another key. Your data is safe.';
       } else if (perCallErrors.length) {
         friendly = `Couldn't read the file. ${perCallErrors[0].split(':').slice(1).join(':').trim().slice(0, 200) || perCallErrors[0]}`;
       } else {
