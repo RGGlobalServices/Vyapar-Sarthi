@@ -722,6 +722,12 @@ model SaleItem {
   // the product's current gstPercent/hsnCode for those only.
   gstPercent    Float?          @map("gst_percent")
   hsnCode       String?         @map("hsn_code") @db.VarChar
+  // A service charge line (Transport/Loading/Packing/Other), not a sold
+  // product — null/false on every ordinary line, including a freeform
+  // manual item with no productId (that's still a real sold thing, just
+  // uncataloged). Lets the Return screen exclude charges from what can be
+  // "returned" without fragile string-matching against charge label text.
+  isCharge      Boolean?        @default(false) @map("is_charge")
   product       Product?        @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sale          Sale?           @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   batches       SaleItemBatch[]

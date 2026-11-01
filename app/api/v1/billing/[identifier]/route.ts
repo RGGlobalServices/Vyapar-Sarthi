@@ -158,6 +158,11 @@ export const GET = handle<Ctx>(async (req, { params }) => {
         variant: item.variant || null,
         color: item.variant ? splitVariantKey(item.variant).color || null : null,
         size: item.variant ? splitVariantKey(item.variant).size || null : null,
+        // A service charge (Transport/Loading/Packing/Other), not a sold
+        // product — the Return screen excludes these from what can be
+        // picked to return. False/undefined on every row saved before this
+        // column existed, same as every other nullable-on-old-rows field.
+        is_charge: !!(item as any).isCharge,
         ...(isMillSale ? { unit: item.unit || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),
       };
     }),

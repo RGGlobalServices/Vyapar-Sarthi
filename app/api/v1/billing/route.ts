@@ -390,6 +390,7 @@ export const POST = handle(async (req) => {
                     marginPerUnit,
                     gstPercent: gstRate,
                     hsnCode: hsn,
+                    isCharge: !!(rawItem.is_discount_exempt || rawItem.isDiscountExempt),
                   };
                 }),
               },

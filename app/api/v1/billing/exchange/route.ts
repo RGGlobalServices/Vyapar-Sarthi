@@ -49,8 +49,10 @@ export const POST = handle(async (req) => {
     exchange_items: ExchangeItemInput[];
     settlement_method?: 'Cash' | 'UPI' | 'Card' | 'Udhar';
     mix_payment?: { cash: number; upi: number; card: number };
+    udhar_clear?: number; // shopkeeper-chosen udhar-clear amount for the refund-excess case (≤ auto split)
   };
-  const { bill_id, return_items, exchange_items, settlement_method, mix_payment } = body;
+  const { bill_id, return_items, exchange_items, settlement_method, mix_payment, udhar_clear } = body;
+  const shopkeeperUdharClear = typeof udhar_clear === 'number' && Number.isFinite(udhar_clear) ? udhar_clear : null;
 
   if (!bill_id || !return_items?.length) throw new ApiError(400, 'bill_id and return_items are required');
   if (!exchange_items?.length) throw new ApiError(400, 'exchange_items is required — use /billing/returns for a plain refund');
@@ -413,6 +415,10 @@ export const POST = handle(async (req) => {
     let cashRefunded = 0;
     let udharAdded = 0;
     let cashCollected = 0;
+    // Portion of the auto udhar-clear the shopkeeper chose NOT to clear —
+    // kept on the customer's account as a credit note instead (same net
+    // effect on total_due, just recorded distinctly; see section 6 below).
+    let creditToAdd = 0;
     // How much of the original bill's outstanding the trade-in credit resolves.
     // Non-zero only when returnValue > amountPaid (trade-in exceeds cash collected).
     // For difference < 0, splitRefund already handles outstanding clearance via udharCleared.
@@ -424,8 +430,14 @@ export const POST = handle(async (req) => {
       const totalBefore = Number(saleRow.total_amount) || 0;
       const outstandingOnThisBill = Math.max(0, totalBefore - paidBefore);
       const split = splitRefund(excess, outstandingOnThisBill, lockedCustomer ? Number(lockedCustomer.total_due) || 0 : null);
-      udharCleared = split.udharCleared;
+      // Honour the shopkeeper's override (never above what the auto-split
+      // would clear) — whatever gap it leaves becomes a credit note instead
+      // of a plain udhar-clear. Cash refunded is unaffected by this choice.
+      udharCleared = shopkeeperUdharClear !== null
+        ? Math.max(0, Math.min(round2(shopkeeperUdharClear), split.udharCleared))
+        : split.udharCleared;
       cashRefunded = split.cashRefunded;
+      creditToAdd = round2(split.udharCleared - udharCleared);
     } else {
       // difference >= 0: trade-in covers full return value, so the original bill's
       // outstanding (if any) is now orphaned — compute the delta to clean it up.
@@ -495,6 +507,22 @@ export const POST = handle(async (req) => {
         },
       });
     }
+    if (saleRow.customer_id && creditToAdd > 0) {
+      await tx.$executeRaw`
+        UPDATE customers SET total_due = COALESCE(total_due, 0) - ${creditToAdd}
+        WHERE id = ${saleRow.customer_id}::uuid AND shop_id = ${shop.id}::uuid
+      `;
+      await tx.customer_transactions.create({
+        data: {
+          customer_id: saleRow.customer_id,
+          type: 'refund',
+          amount: creditToAdd,
+          note: `Exchange credit note: ${saleRow.invoice_number} (udhar not cleared, kept as credit)`,
+          bill_number: saleRow.invoice_number,
+          created_at: new Date(),
+        },
+      });
+    }
     if (saleRow.customer_id && udharAdded > 0) {
       if (lockedCustomer && (lockedCustomer.credit_limit ?? 0) > 0) {
         // Use totalDue after outstanding clearing so the credit limit check reflects
@@ -539,7 +567,7 @@ export const POST = handle(async (req) => {
       returnValue: Math.round(returnValue * 100) / 100,
       exchangeValue: Math.round(exchangeValue * 100) / 100,
       difference,
-      settlement: { udharCleared, cashRefunded, udharAdded, cashCollected },
+      settlement: { udharCleared, cashRefunded, udharAdded, cashCollected, creditToAdd },
     };
   }, {
     maxWait: 30000,

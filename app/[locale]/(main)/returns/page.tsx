@@ -355,8 +355,11 @@ export default function ReturnsPage() {
       // Initialize returnable items (quantity 0 initially)
       if (res.data.items) {
         const availableItems = res.data.items
+          // Service charges (Transport/Loading/Packing/Other) are billed as
+          // line items but aren't a sold product — never returnable.
+          .filter((item: any) => !item.is_charge)
           .filter((item: any) => (item.quantity - (item.returned_quantity || 0)) > 0)
-          .map((item: any) => ({ 
+          .map((item: any) => ({
             ...item, 
             availableQty: item.quantity - (item.returned_quantity || 0),
             returnQty: 0, 
@@ -471,7 +474,15 @@ export default function ReturnsPage() {
   // Exchange: return credit = only the portion the customer actually PAID
   // (udhar debt is cleared separately but must not count as exchange credit —
   //  otherwise the shop effectively forgives the unpaid debt for free)
-  const udharForExchange = Math.min(returnValueForExchange, billUdharAmt);
+  const autoUdharForExchange = Math.min(returnValueForExchange, billUdharAmt);
+  // Editable like the plain-return flow's udhar input — if the shopkeeper
+  // chooses to clear less (or none), the uncleared remainder simply stays on
+  // the customer's udhar account rather than silently vanishing into exchange
+  // credit; the server records it as a credit note instead of a udhar-clear
+  // when this is sent as `udhar_clear` on /billing/exchange.
+  const udharForExchange = udharClearOverride !== null
+    ? Math.max(0, Math.min(udharClearOverride, autoUdharForExchange))
+    : autoUdharForExchange;
   const effectiveReturnCredit = returnValueForExchange - udharForExchange;
   const exchangeDifference = Math.round((exchangeValueTotal - effectiveReturnCredit) * 100) / 100;
 
@@ -505,6 +516,10 @@ export default function ReturnsPage() {
 
       await api.post(`/billing/exchange`, {
         bill_id: bill.id,
+        // Shopkeeper-chosen udhar-clear amount (editable above) — the server
+        // honours it when the exchange ends in a refund (excess < 0) and
+        // parks whatever's left unCleared as a credit note instead.
+        udhar_clear: udharForExchange,
         return_items: itemsToReturn.map(item => ({
           item_id: item.id,
           quantity: item.returnQty,
@@ -536,6 +551,7 @@ export default function ReturnsPage() {
       setExchangeMode(false);
       setExchangeLines([]);
       setExchangeDiscount(0);
+      setUdharClearOverride(null);
       fetchHistory();
       invalidateReturnCaches();
     } catch (err: any) {
@@ -1020,13 +1036,33 @@ export default function ReturnsPage() {
                         <span className="text-slate-500">{t('returnValueLabel') || 'Return Value'}</span>
                         <span className="font-bold text-slate-900 dark:text-slate-100">₹{returnValueForExchange.toLocaleString('en-IN')}</span>
                       </div>
-                      {udharForExchange > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-orange-500">{t('udharClearedLabel') || '↓ Udhar cleared (not exchange credit)'}</span>
-                          <span className="font-bold text-orange-500">-₹{udharForExchange.toLocaleString('en-IN')}</span>
-                        </div>
+                      {autoUdharForExchange > 0 && (
+                        <>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-orange-500 shrink-0">{t('udharClearedLabel') || '↓ Udhar cleared (not exchange credit)'}</span>
+                            <div className="flex items-center gap-1 ml-auto">
+                              <span className="text-orange-500 font-bold shrink-0">-₹</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={autoUdharForExchange}
+                                value={udharForExchange}
+                                onChange={e => {
+                                  const v = parseFloat(e.target.value);
+                                  setUdharClearOverride(isNaN(v) ? 0 : Math.max(0, v));
+                                }}
+                                className="w-20 text-right text-xs font-bold text-orange-500 bg-white dark:bg-slate-800 border border-orange-300 dark:border-orange-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                              />
+                            </div>
+                          </div>
+                          {autoUdharForExchange - udharForExchange > 0.009 && (
+                            <p className="text-[10px] text-slate-500 pl-1">
+                              {t('udharKeptAsCredit') || "Remaining stays on the party's udhar account as credit:"} ₹{round2(autoUdharForExchange - udharForExchange).toLocaleString('en-IN')}
+                            </p>
+                          )}
+                        </>
                       )}
-                      {udharForExchange > 0 && (
+                      {autoUdharForExchange > 0 && (
                         <div className="flex justify-between text-xs border-t border-slate-100 dark:border-slate-800 pt-1">
                           <span className="text-slate-500 font-semibold">{t('netExchangeCredit') || 'Net Exchange Credit'}</span>
                           <span className="font-bold text-slate-900 dark:text-slate-100">₹{effectiveReturnCredit.toLocaleString('en-IN')}</span>
