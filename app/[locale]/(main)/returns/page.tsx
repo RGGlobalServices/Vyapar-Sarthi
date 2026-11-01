@@ -653,6 +653,11 @@ export default function ReturnsPage() {
                     <div key={idx} className="p-6 hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <h4 className="font-bold text-slate-900 dark:text-slate-200">{item.name || `Product #${item.product_id}`}</h4>
+                        {(item.color || item.size || item.variant) && (
+                          <p className="text-[11px] text-slate-500 font-semibold">
+                            {[item.color, item.size].filter(Boolean).join(' / ') || item.variant}
+                          </p>
+                        )}
                         <p className="text-xs text-slate-500">
                           {t('price') || 'Price'}: ₹{item.price_per_unit}
                           {item.original_price_per_unit && item.original_price_per_unit !== item.price_per_unit && (bill?.discount_factor ?? 1) <= 1 && (

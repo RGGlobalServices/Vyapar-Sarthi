@@ -6,6 +6,7 @@ import { getReturnedQuantitiesForSale, reverseSaleEffects, cleanupSaleBatches, c
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { assertSaleEditable, assertNotJobWorkBill } from '@/lib/server/millGuards';
 import { loadMillInvoiceExtras } from '@/lib/server/millInvoiceExtras';
+import { splitVariantKey } from '@/lib/variants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -148,7 +149,16 @@ export const GET = handle<Ctx>(async (req, { params }) => {
         // for rows saved before these columns existed (both null there).
         hsnCode: (item as any).hsnCode ?? item.product?.hsnCode ?? '',
         gstPercent: (item as any).gstPercent ?? item.product?.gstPercent ?? 0,
-        ...(isMillSale ? { unit: item.unit || null, variant: item.variant || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),
+        // Which colour/size this line was actually billed at — stored on
+        // every SaleItem (not mill-only), but only the mill branch below
+        // used to surface it. Without this, a legacy (Dukan/Vyapar/Udyog
+        // non-mill) sale's invoice detail, print/PDF and the Return screen
+        // all showed just the bare product name — no way to tell which
+        // variant of a multi-colour/size product was actually sold.
+        variant: item.variant || null,
+        color: item.variant ? splitVariantKey(item.variant).color || null : null,
+        size: item.variant ? splitVariantKey(item.variant).size || null : null,
+        ...(isMillSale ? { unit: item.unit || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),
       };
     }),
   });

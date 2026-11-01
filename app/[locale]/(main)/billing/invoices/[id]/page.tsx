@@ -186,6 +186,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       total: i.total,
       hsnCode: i.hsnCode || '',
       gstPercent: i.gstPercent || 0,
+      // Which colour/size this line was actually billed at — ThermalInvoice/
+      // A4Invoice already know how to print this, it just never had the data.
+      variant: i.variant || undefined,
+      color: i.color || undefined,
+      size: i.size || undefined,
     })),
     total: totalAmount,
     paymentMethod: invoice.payment_type,
@@ -329,6 +334,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold">{item.name}</div>
+                          {(item.color || item.size || item.variant) && (
+                            <div className="text-[10px] text-slate-500 font-semibold">
+                              {[item.color, item.size].filter(Boolean).join(' / ') || item.variant}
+                            </div>
+                          )}
                           <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
                         </td>
                         <td className="px-6 py-4 text-center text-slate-500 font-medium">{item.hsnCode || '-'}</td>
