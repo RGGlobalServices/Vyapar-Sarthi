@@ -269,26 +269,28 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     }
   };
 
-  // Switching TO "Excl" (mode='inclusive') is a deliberate "add GST on top
-  // of what's already here" action — the box's number must never visibly
-  // drop when this is clicked. Recovers the TRUE pre-tax base first (if
-  // gstPercent is already set, item.price already has that markup baked in
-  // from a previous Excl click or changeGstSlab — using item.price directly
-  // as the "base" here re-stacked GST on top of GST on every repeated
-  // Excl→Incl→Excl toggle, drifting the total further each time) and marks
-  // THAT up — so repeated toggling is idempotent (same rate in, same total
-  // out) and only a genuine first-time "add tax" or a rate change actually
-  // moves the total. getBase() then redisplays that same base number in the
-  // box afterward, so the price the cashier sees never jumps around either.
-  // Switching TO "Incl" stays purely cosmetic — nothing more is being
-  // added, so the price/rate are left exactly as they are.
+  // INVARIANT this function maintains: while mode='exclusive' (Incl),
+  // item.price is ALWAYS the bare base — no GST is baked in yet, even if a
+  // rate is already declared in the % dropdown (that rate is just queued up
+  // for when GST actually gets applied, not yet reflected in the charge).
+  // While mode='inclusive' (Excl), item.price ALWAYS already has that same
+  // declared rate baked in. Each switch direction does exactly the one
+  // conversion needed to keep that invariant true, and nothing else:
+  //   → Excl: item.price is guaranteed bare right now, so it IS the base —
+  //     mark it up. Always a real, visible addition (never a silent no-op),
+  //     and never double-counts, because Incl always leaves it bare (below).
+  //   → Incl: strip the just-applied GST back out, so the next Excl click
+  //     starts from the same bare base again — without this, repeatedly
+  //     toggling Excl→Incl→Excl kept re-marking-up an already-marked-up
+  //     price, compounding GST on GST a little more on every round trip.
   const switchMode = (newMode: 'inclusive' | 'exclusive') => {
     if (newMode === mode) return;
     if (newMode === 'inclusive') {
-      const trueBase = gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
       const slab = gstPercent > 0 ? gstPercent : (savedSlabRef.current || 12);
       updateGstPercent(item.id, slab, lineRef(item));
-      updatePrice(item.id, Math.round(toInclusivePrice(trueBase, slab)), lineRef(item));
+      updatePrice(item.id, Math.round(toInclusivePrice(item.price, slab)), lineRef(item));
+    } else if (gstPercent > 0) {
+      updatePrice(item.id, Math.round(toExclusivePrice(item.price, gstPercent)), lineRef(item));
     }
     setMode(newMode);
   };
