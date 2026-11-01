@@ -173,7 +173,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const totalAmount = Number(invoice.total_amount) || 0;
   const discountAmount = Number(invoice.discount_amount) || 0;
   const gstAmount = Number(invoice.gst_amount) || 0;
-  const chargesTotal = Number(invoice.charges_total) || 0;
+  // charges_total is a Mill-only sale column (null on legacy bills) — for
+  // Dukan/Vyapar/Udyog bills, reconstruct it from the discount-exempt charge
+  // lines (Transport/Loading/Packing/Other) themselves, which are now always
+  // shown at their full, undiscounted amount (see GET /billing/[identifier]).
+  const chargesFromItems = items.reduce((s: number, i: any) => s + (i.is_charge ? (Number(i.total) || 0) : 0), 0);
+  const chargesTotal = Number(invoice.charges_total) || chargesFromItems;
   const roundOffAmount = Number(invoice.round_off_amount) || 0;
 
   const billData = {
@@ -407,7 +412,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 font-medium tracking-tight">{t('taxableValue')}</span>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{(totalAmount - gstAmount).toLocaleString('en-IN')}</span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{Math.max(0, totalAmount - gstAmount - chargesTotal).toLocaleString('en-IN')}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500 font-medium tracking-tight">{t('gstAmount')}</span>

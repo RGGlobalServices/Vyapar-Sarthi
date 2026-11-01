@@ -71,8 +71,14 @@ export const GET = handle<Ctx>(async (req, { params }) => {
   const priorReturnTotal = priorReturnRows.reduce((s, r) => {
     try { const n = JSON.parse(r.note || '{}'); return n?.billId === sale.id && n?.settled === true ? s + (Number(r.amount) || 0) : s; } catch { return s; }
   }, 0);
-  const grossBeforeDiscount = sale.items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.pricePerUnit) || 0), 0);
-  const originalTotal = Number(sale.totalAmount) + priorReturnTotal;
+  // Service-charge lines (Transport/Loading/Packing/Other) never take a share
+  // of the bill discount (see the `discountable` flag in financialEngine.ts)
+  // — strip their raw total out of both sides of the ratio so it reflects
+  // only what happened to the actual product lines. Charges predating the
+  // isCharge column fall back to the old whole-bill ratio unchanged (chargesTotalRaw = 0 for them).
+  const chargesTotalRaw = sale.items.reduce((s, i) => s + ((i as any).isCharge ? (Number(i.quantity) || 0) * (Number(i.pricePerUnit) || 0) : 0), 0);
+  const grossBeforeDiscount = sale.items.reduce((s, i) => s + ((i as any).isCharge ? 0 : (Number(i.quantity) || 0) * (Number(i.pricePerUnit) || 0)), 0);
+  const originalTotal = Math.max(0, Number(sale.totalAmount) + priorReturnTotal - chargesTotalRaw);
   // Regular bills: factor ≤ 1 (discount reduces total below gross).
   // Mill bills: factor > 1 (GST + charges make total exceed gross base prices).
   const discountFactor = grossBeforeDiscount > 0 ? Math.max(0, originalTotal / grossBeforeDiscount) : 1;
@@ -132,7 +138,12 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     items: sale.items.map((item) => {
       const returnedQty = returnedQuantities[item.id] || returnedQuantities[item.productId || ''] || returnedQuantities[item.product?.name || ''] || 0;
       const ppu = Number(item.pricePerUnit) || 0;
-      const effectivePpu = Math.round(ppu * discountFactor * 100) / 100;
+      // Service charges (Transport/Loading/Packing/Other) are discount-exempt
+      // by design (see the `discountable` flag in financialEngine.ts) — the
+      // blanket discountFactor below is a GLOBAL ratio across every item and
+      // doesn't know that, so applying it to a charge line would silently
+      // shrink it even though no discount was ever meant to touch it.
+      const effectivePpu = (item as any).isCharge ? ppu : Math.round(ppu * discountFactor * 100) / 100;
       return {
         id: item.id,
         product_id: item.productId,
