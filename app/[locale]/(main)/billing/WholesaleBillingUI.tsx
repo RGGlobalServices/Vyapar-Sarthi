@@ -264,11 +264,23 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     }
   };
 
-  // Purely cosmetic — only changes what the input shows / how typing is
-  // interpreted going forward. Never touches item.price or item.gstPercent,
-  // so the rate and breakdown stay exactly as they were before the click.
+  // Switching TO "Excl" (mode='inclusive') is a deliberate "add GST on top
+  // of what's already here" action — the box's number must never visibly
+  // drop when this is clicked. Treats whatever is CURRENTLY charged as the
+  // new base and adds GST on top of it, so the total goes UP, never down;
+  // getBase() then redisplays that same base number in the box afterward
+  // (toExclusivePrice/toInclusivePrice round-trip back to it), so the price
+  // the cashier sees never jumps around — only the total (and the shown GST
+  // breakdown) changes. Switching TO "Incl" stays purely cosmetic — nothing
+  // more is being added, so the price/rate are left exactly as they are.
   const switchMode = (newMode: 'inclusive' | 'exclusive') => {
     if (newMode === mode) return;
+    if (newMode === 'inclusive') {
+      const currentBase = item.price;
+      const slab = gstPercent > 0 ? gstPercent : (savedSlabRef.current || 12);
+      updateGstPercent(item.id, slab, lineRef(item));
+      updatePrice(item.id, Math.round(toInclusivePrice(currentBase, slab)), lineRef(item));
+    }
     setMode(newMode);
   };
 
