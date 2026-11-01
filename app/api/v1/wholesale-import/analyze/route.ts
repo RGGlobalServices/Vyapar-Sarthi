@@ -162,6 +162,18 @@ export async function POST(req: NextRequest) {
     throw e;
   }
 
+  // Every provider attempt below is individually timed, but nothing used to
+  // cap the REQUEST as a whole — Gemini's own 20s budget, falling through to
+  // OpenAI's 30s, falling through to an uncapped Tesseract OCR pass, then a
+  // full second retry pass of all that, could legitimately run 100s+ for a
+  // single slow/exhausted file. The platform's reverse proxy doesn't wait
+  // that long — it kills the connection and hands back its own HTML 504 page,
+  // which the client can't even parse as JSON. Capping the whole request to a
+  // shared deadline means we always respond (success, partial result, or a
+  // clean JSON timeout error) comfortably before that happens.
+  const requestStartedAt = Date.now();
+  const OVERALL_DEADLINE_MS = Number(process.env.IMPORT_OVERALL_DEADLINE_MS) || 50000;
+
   try {
     const fd = await req.formData();
     const files = fd.getAll('files[]') as File[];
@@ -1090,21 +1102,36 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // then RETRY any that failed — configurable pass count so we never silently
     // drop rows.
     const CONCURRENCY = importConfig.maxConcurrentWorkers;
+    const remainingBudgetMs = () => OVERALL_DEADLINE_MS - (Date.now() - requestStartedAt);
     const runTask = async (t: Task): Promise<{ label: string; raw?: string; error?: string }> => {
-      try { return { label: t.label, raw: await t.run() }; }
+      const remaining = remainingBudgetMs();
+      if (remaining <= 2000) return { label: t.label, error: `skipped: overall request deadline (${OVERALL_DEADLINE_MS}ms) reached before this task could start` };
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`overall request deadline (${OVERALL_DEADLINE_MS}ms) reached`)), remaining),
+        );
+        return { label: t.label, raw: await Promise.race([t.run(), timeoutPromise]) };
+      }
       catch (e: any) { return { label: t.label, error: e?.message || 'failed' }; }
     };
     const runAll = async (list: Task[]) => {
       const out: { label: string; raw?: string; error?: string }[] = [];
       for (let i = 0; i < list.length; i += CONCURRENCY) {
+        if (remainingBudgetMs() <= 2000) {
+          out.push(...list.slice(i).map((t) => ({ label: t.label, error: `skipped: overall request deadline (${OVERALL_DEADLINE_MS}ms) reached` })));
+          break;
+        }
         out.push(...await Promise.all(list.slice(i, i + CONCURRENCY).map(runTask)));
       }
       return out;
     };
 
     let results = await runAll(tasks);
-    // Retry failed chunks/pages up to retryCount times before giving up.
+    // Retry failed chunks/pages up to retryCount times before giving up — but
+    // never start a retry pass that has no realistic chance of finishing
+    // before the overall deadline forces us to respond anyway.
     for (let attempt = 0; attempt < importConfig.retryCount; attempt++) {
+      if (remainingBudgetMs() <= 5000) break;
       const failedTasks = tasks.filter((t) => results.find(r => r.label === t.label)?.error);
       if (failedTasks.length === 0) break;
       const retry = await runAll(failedTasks);
@@ -1130,9 +1157,17 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       // and should get the same actionable message as a 429.
       const isAllQuota = perCallErrors.length > 0 && perCallErrors.every(e => /\b429\b|\b402\b|RESOURCE_EXHAUSTED|quota|prepayment|insufficient.?(credit|balance|quota)|billing/i.test(e));
       const isAllInvalidJson = perCallErrors.length > 0 && perCallErrors.every(e => /INVALID_JSON|unexpected character|unexpected token|not.*valid json|invalid.*json/i.test(e));
+      // All providers were too slow (or there were too many pages/chunks to
+      // get through) within the shared request deadline — different from a
+      // hard failure, so point the shopkeeper at the actual lever (smaller
+      // file / fewer pages) instead of a provider-quota message.
+      const isAllDeadline = perCallErrors.length > 0 && perCallErrors.every(e => /overall request deadline/i.test(e));
       let friendly: string;
       let code: string | undefined;
-      if (isAllInvalidJson) {
+      if (isAllDeadline) {
+        code = 'AI_TIMEOUT';
+        friendly = 'This file is taking too long to process (large file, many pages, or a slow AI provider). Please try a smaller file, fewer pages at a time, or retry in a moment.';
+      } else if (isAllInvalidJson) {
         code = 'AI_INVALID_JSON';
         friendly = 'The AI could not read this bill in a structured way — every provider returned prose instead of the required JSON. This usually happens when the image is very unclear, rotated, or contains handwriting the model can\'t parse. Please try a clearer photo, or enter the bill manually.';
       } else if (isAllQuota) {
