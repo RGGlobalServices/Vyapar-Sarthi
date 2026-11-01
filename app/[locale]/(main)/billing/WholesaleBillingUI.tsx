@@ -229,6 +229,23 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     if (gstPercent > 0) savedSlabRef.current = gstPercent;
   }, [gstPercent]);
 
+  // Keep local `mode` in sync when gstPercent/price are changed from OUTSIDE
+  // this component — e.g. the bill-type effect auto-applying a product's
+  // configured GST% (already marked up into item.price) the moment the
+  // cashier switches the bill to GST Invoice, for a line added before that
+  // switch. Without this, switchMode's bare/marked-up invariant (see
+  // switchMode below) goes stale: local mode would still say 'exclusive'
+  // (bare) while item.price has actually already been marked up externally,
+  // so the next "Excl" click would mark it up a second time on top of itself.
+  const prevGstPercentRef = useRef(gstPercent);
+  useEffect(() => {
+    if (prevGstPercentRef.current === 0 && gstPercent > 0 && mode !== 'inclusive') {
+      setMode('inclusive');
+    }
+    prevGstPercentRef.current = gstPercent;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gstPercent]);
+
   // Internal-only helper (breakdown text, changeGstSlab) — the true pre-tax
   // base reverse-extracted from the current final price. NOT used for what
   // the input displays: showing this extracted (smaller) number in the
@@ -1359,9 +1376,30 @@ export default function WholesaleBillingUI() {
             updatePrice(item.id as any, Math.round(base), lineRef(item));
           }
         });
+      } else {
+        // Switching TO GST: auto-apply each line's PRODUCT-configured GST%
+        // (and Including/Excluding GST setting) the same way CartPriceInput's
+        // own mount effect does for a freshly-added line — but that effect
+        // only runs once per line, at the moment it's added. A cart built up
+        // BEFORE flipping to GST Invoice (the common order: add items, then
+        // decide the bill is GST) never got that first run with isGstBill
+        // true, so every line sat at 0% until the cashier manually clicked
+        // Excl/Incl on each one — a real problem on a multi-item bill.
+        // Never touches a line that already has a rate (manually set, or
+        // already applied) — this only fills in lines still at 0%.
+        items.forEach(item => {
+          if ((Number(item.gstPercent) || 0) > 0) return;
+          const product = products.find(p => p.id === item.id);
+          const naturalSlab = Number(product?.gstPercent ?? product?.gst_percent ?? 0) || 0;
+          if (!product || naturalSlab <= 0) return;
+          updateGstPercent(item.id as any, naturalSlab, lineRef(item));
+          if (!product.gstInclusive) {
+            updatePrice(item.id as any, Math.round(toInclusivePrice(item.price, naturalSlab)), lineRef(item));
+          }
+        });
       }
     }
-  }, [billType, isMill, items, updateGstPercent, updatePrice]);
+  }, [billType, isMill, items, products, updateGstPercent, updatePrice]);
 
   const addToCart = useCallback((product: any, variant?: string, forceAdd = false, batchInfo?: { id: string; batchNumber: string | null; costPrice: number | null; sellingPrice: number | null } | null, fgLotInfo?: { fgLotId: string | null; fgLotNumber: string | null; packBreakdown?: Array<{ packType: string; packKg: number; count: number }>; initialQty?: number } | null) => {
     // Instant feedback the moment ANY add is triggered — closes the search
