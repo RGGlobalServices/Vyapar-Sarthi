@@ -2646,8 +2646,18 @@ export default function WholesaleBillingUI() {
                     // Kg (etc.) are actually in it, same figure the product's own Pack Size holds.
                     const lineProduct = isMill ? products.find((p: any) => p.id === item.id) : null;
                     const packLabel = lineProduct?.packSize && lineProduct?.packUnit ? `${lineProduct.packSize} ${lineProduct.packUnit}` : null;
+                    // Matches Dukan/Vyapar's own cart sub-line exactly (page.tsx) — that
+                    // screen combines color AND size ("Red / M"); this one used to show
+                    // only the raw variant key OR size alone, silently dropping color
+                    // whenever a variant product's addToCart set color/size separately
+                    // but variant itself came back empty for that line.
+                    const variantDisplay = !bizConfig.hasLiquorSpecs
+                      ? (bizConfig.hasSizes && item.color
+                          ? `${item.color} / ${item.size || item.variant || ''}`.replace(/ \/ $/, '')
+                          : (item.size || item.variant || null))
+                      : (item.size || null);
                     const subLineParts = [
-                      item.variant && !bizConfig.hasLiquorSpecs ? item.variant : (item.size || null),
+                      variantDisplay,
                       bizConfig.hasGender && item.gender ? item.gender : null,
                       isDualUnit && dualUnitCfg ? dualUnitCfg.primaryUnit : (item.unit ? (packLabel ? `${item.unit} (${packLabel})` : item.unit) : null),
                     ].filter(Boolean);
