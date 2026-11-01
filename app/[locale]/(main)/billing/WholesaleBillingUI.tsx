@@ -1970,6 +1970,12 @@ export default function WholesaleBillingUI() {
           quantity: 1,
           price_per_unit: Number(charges[key]),
           purchase_price: 0,
+          // Transport/Loading/Packing/Other are service charges, not goods —
+          // the discount is meant to come off the items being sold, not off
+          // what it costs to move them. Without this, billing/route.ts's
+          // proportional discount spread (same % off every line, charges
+          // included) silently shaved these down too.
+          is_discount_exempt: true,
         }));
 
       const saleItems = [

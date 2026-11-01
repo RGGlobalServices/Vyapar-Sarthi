@@ -284,6 +284,7 @@ export async function createSaleEffects(
       purchasePrice: cp,
       gstPercent: gstRate,
       hsnCode: i.hsn_code || i.hsnCode || dbProduct?.hsnCode || null,
+      discountable: !(i.is_discount_exempt || i.isDiscountExempt),
     };
   });
 

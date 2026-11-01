@@ -12,6 +12,11 @@ export interface InputLineItem {
   purchasePrice: number;  // Cost price per unit
   gstPercent?: number;    // GST rate % (e.g. 18)
   hsnCode?: string | null;
+  // false for service charges (Transport/Loading/Packing/Other, etc.) that
+  // ride along as a line item but aren't goods being discounted — the whole-
+  // bill discount is spread only across the other lines, never these.
+  // Defaults to true (every existing caller's behaviour is unchanged).
+  discountable?: boolean;
 }
 
 export type DiscountType = 'fixed' | 'percentage';
@@ -82,13 +87,16 @@ export function calculateInvoice(
 
   // 1. Item Totals & Gross Subtotal
   let grossSubtotal = 0;
+  let discountableGrossSubtotal = 0;
   const sanitizedItems = items.map(item => {
     const qty = Math.max(0, Number(item.quantity) || 0);
     const sp = Math.max(0, Number(item.sellingPrice) || 0);
     const cp = Math.max(0, Number(item.purchasePrice) || 0);
     const gstRate = Math.max(0, Number(item.gstPercent) || 0);
     const gross = round2(sp * qty);
+    const discountable = item.discountable !== false;
     grossSubtotal += gross;
+    if (discountable) discountableGrossSubtotal += gross;
 
     return {
       productId: item.productId || null,
@@ -100,23 +108,30 @@ export function calculateInvoice(
       gstPercent: gstRate,
       hsnCode: item.hsnCode || null,
       grossTotal: gross,
+      discountable,
     };
   });
 
   grossSubtotal = round2(grossSubtotal);
+  discountableGrossSubtotal = round2(discountableGrossSubtotal);
 
-  // 2. Calculate Total Discount
+  // 2. Calculate Total Discount — off the discountable lines only (service
+  // charges like Transport/Loading never shrink from a bill-level discount;
+  // see InputLineItem.discountable). Every existing caller sends no charge
+  // lines at all, so discountableGrossSubtotal === grossSubtotal for them
+  // and nothing here changes.
   let rawDiscount = 0;
   if (discType === 'percentage') {
-    rawDiscount = (grossSubtotal * discValue) / 100;
+    rawDiscount = (discountableGrossSubtotal * discValue) / 100;
   } else {
     rawDiscount = discValue;
   }
-  const totalDiscount = round2(Math.min(grossSubtotal, Math.max(0, rawDiscount)));
+  const totalDiscount = round2(Math.min(discountableGrossSubtotal, Math.max(0, rawDiscount)));
   const discountedSubtotal = round2(Math.max(0, grossSubtotal - totalDiscount));
 
-  // Scale ratio to distribute bill-level discount proportionally to line items
-  const scaleRatio = grossSubtotal > 0 ? (grossSubtotal - totalDiscount) / grossSubtotal : 0;
+  // Scale ratio to distribute the discount proportionally across discountable line items only
+  const scaleRatio = discountableGrossSubtotal > 0 ? (discountableGrossSubtotal - totalDiscount) / discountableGrossSubtotal : 0;
+  const lastDiscountableIndex = sanitizedItems.reduce((lastIdx, it, idx) => it.discountable ? idx : lastIdx, -1);
 
   // 3. Line Item Financial Breakdown
   let accumulatedDiscount = 0;
@@ -126,10 +141,14 @@ export function calculateInvoice(
   let totalProfit = 0;
 
   const calculatedItems: CalculatedLineItem[] = sanitizedItems.map((item, index) => {
-    // Proportional line discount
+    // Proportional line discount — never touches a non-discountable line
+    // (service charges keep their full entered amount).
     let lineDiscount = 0;
-    if (index === sanitizedItems.length - 1) {
-      // Last item gets remaining discount to prevent rounding drift
+    if (!item.discountable) {
+      lineDiscount = 0;
+    } else if (index === lastDiscountableIndex) {
+      // Last DISCOUNTABLE item gets the remainder, to prevent rounding drift
+      // — may not be the last line overall when charge lines follow it.
       lineDiscount = round2(totalDiscount - accumulatedDiscount);
     } else {
       lineDiscount = round2(item.grossTotal * (1 - scaleRatio));

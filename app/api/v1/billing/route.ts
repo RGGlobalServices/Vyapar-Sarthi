@@ -137,6 +137,7 @@ export const POST = handle(async (req) => {
       purchasePrice: cp,
       gstPercent: gstRate,
       hsnCode: i.hsn_code || i.hsnCode || dbProduct?.hsnCode || null,
+      discountable: !(i.is_discount_exempt || i.isDiscountExempt),
     };
   });
 
@@ -277,10 +278,11 @@ export const POST = handle(async (req) => {
             const variant = i.variant || null;
             const gstRate = Number(i.gst_percent ?? i.gstPercent ?? dbProduct?.gstPercent) || 0;
             const hsn = i.hsn_code || i.hsnCode || dbProduct?.hsnCode || null;
+            const discountable = !(i.is_discount_exempt || i.isDiscountExempt);
 
             const pushLine = (lineQty: number, purchasePrice: number) => {
               if (lineQty <= 0) return;
-              batchAwareLineItems.push({ productId: pid || null, unit, variant, quantity: lineQty, sellingPrice: sp, purchasePrice, gstPercent: gstRate, hsnCode: hsn });
+              batchAwareLineItems.push({ productId: pid || null, unit, variant, quantity: lineQty, sellingPrice: sp, purchasePrice, gstPercent: gstRate, hsnCode: hsn, discountable });
               originalIndexByLineIndex.push(origIdx);
             };
 
