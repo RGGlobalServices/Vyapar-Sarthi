@@ -719,6 +719,7 @@ model SaleItem {
   product       Product?        @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sale          Sale?           @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   batches       SaleItemBatch[]
+  fgLotDraws    SaleItemFgLot[]
 
   @@index([saleId], map: "ix_sale_items_sale_id")
   @@index([productId], map: "ix_sale_items_product_id")
@@ -1433,6 +1434,28 @@ model SaleItemBatch {
   @@map("sale_item_batches")
 }
 
+// Which Finished-Goods lot(s) a Bada Udyog (mill_v2) sale line actually drew
+// from, and how much — mirrors SaleItemBatch, which does the same job for
+// the legacy/Udyog Batch model. Without this record, deleting a mill bill
+// had no way to know which FinishedGoodsLot.availableQuantity to restore
+// (the fg_lot_id the client sends at billing time was used once, in
+// handleMillSale's deduction pass, and then discarded — see
+// reverseSaleEffects' fgLotRestores for the read side).
+model SaleItemFgLot {
+  id         String    @id @default(uuid()) @db.Uuid
+  saleItemId String    @map("sale_item_id") @db.Uuid
+  fgLotId    String    @map("fg_lot_id") @db.Uuid
+  quantity   Float
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  saleItem SaleItem        @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  fgLot    FinishedGoodsLot @relation(fields: [fgLotId], references: [id], onDelete: Cascade)
+
+  @@index([saleItemId])
+  @@index([fgLotId])
+  @@map("sale_item_fg_lots")
+}
+
 /**
  * Goods sent back to a supplier from a specific purchase (damaged, wrong
  * item, excess stock, …) — a debit note. Deliberately its own model rather
@@ -2014,6 +2037,7 @@ model FinishedGoodsLot {
   sourceOutput     BatchStageOutput? @relation(fields: [sourceOutputId], references: [id], onDelete: SetNull)
   godown           Godown?           @relation(fields: [godownId], references: [id], onDelete: SetNull)
   challanItems     DeliveryChallanItem[]
+  saleDraws        SaleItemFgLot[]
 
   @@unique([shopId, lotNumber])
   @@index([shopId])

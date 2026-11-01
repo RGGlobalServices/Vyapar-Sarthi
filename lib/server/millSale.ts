@@ -348,12 +348,17 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
           }
         }
 
-        // (f2) Decrement FinishedGoodsLot.availableQuantity for items linked to a FG lot
+        // (f2) Decrement FinishedGoodsLot.availableQuantity for items linked to a FG lot.
+        // Each draw is also recorded in sale_item_fg_lots (saleItemId → fgLotId → qty) —
+        // without this, deleting the bill later would have no way to know which lot(s) to
+        // credit back (fg_lot_id only ever existed in this request's body, not on SaleItem).
+        const fgLotRows: { saleItemId: string; fgLotId: string; quantity: number }[] = [];
         const fgLotDraws = new Map<string, number>();
         for (const p of parsed) {
           const fgLotId = p.raw.fg_lot_id || p.raw.fgLotId || null;
           if (!fgLotId) continue;
           fgLotDraws.set(String(fgLotId), (fgLotDraws.get(String(fgLotId)) || 0) + p.qty);
+          fgLotRows.push({ saleItemId: created.items[p.idx].id, fgLotId: String(fgLotId), quantity: p.qty });
         }
         for (const [fgLotId, qty] of fgLotDraws.entries()) {
           await tx.$executeRaw`
@@ -381,8 +386,10 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
               SET available_quantity = GREATEST(0, available_quantity - ${draw})
               WHERE id = ${lot.id}::uuid AND shop_id = ${shopId}::uuid`;
             remaining -= draw;
+            fgLotRows.push({ saleItemId: created.items[p.idx].id, fgLotId: lot.id, quantity: draw });
           }
         }
+        if (fgLotRows.length) await tx.saleItemFgLot.createMany({ data: fgLotRows });
 
         // (g) customer udhar + credit limit, cash book
         if (outstandingPaise > 0 && finalCustomerId) {

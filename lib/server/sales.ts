@@ -55,7 +55,7 @@ export async function reverseSaleEffects(
   tx: Prisma.TransactionClient,
   shopId: string,
   saleId: string
-): Promise<{ sale: ReversedSale; netQuantitiesByProduct: Map<string, number>; lotRestores: Map<string, number> }> {
+): Promise<{ sale: ReversedSale; netQuantitiesByProduct: Map<string, number>; lotRestores: Map<string, number>; fgLotRestores: Map<string, number> }> {
   const sale = await tx.sale.findFirst({
     where: { id: saleId, shopId },
     include: { items: true },
@@ -167,10 +167,29 @@ export async function reverseSaleEffects(
     });
   }
 
+  // Same net-of-returns share logic as the Batch lotRestores above, but for
+  // Bada Udyog (mill_v2) Finished-Goods lot draws — see SaleItemFgLot.
+  const fgLotRestores = new Map<string, number>();
+  const fgDraws = await tx.saleItemFgLot.findMany({ where: { saleItemId: { in: sale.items.map((i) => i.id) } } });
+  const fgDrawsByItem = new Map<string, typeof fgDraws>();
+  for (const d of fgDraws) fgDrawsByItem.set(d.saleItemId, [...(fgDrawsByItem.get(d.saleItemId) || []), d]);
+  for (const item of sale.items) {
+    const net = netByItem.get(item.id) || 0;
+    const total = Number(item.quantity) || 0;
+    const list = fgDrawsByItem.get(item.id) || [];
+    if (net <= 0 || total <= 0 || !list.length) continue;
+    let left = net;
+    list.forEach((d, idx) => {
+      const share = idx === list.length - 1 ? left : Math.min(left, Math.round(((Number(d.quantity) || 0) * net / total) * 1e4) / 1e4);
+      left -= share;
+      if (share > 0) fgLotRestores.set(d.fgLotId, (fgLotRestores.get(d.fgLotId) || 0) + share);
+    });
+  }
+
   await tx.saleItem.deleteMany({ where: { saleId } });
   await tx.sale.delete({ where: { id: saleId } });
 
-  return { sale, netQuantitiesByProduct, lotRestores };
+  return { sale, netQuantitiesByProduct, lotRestores, fgLotRestores };
 }
 
 /**
@@ -462,9 +481,15 @@ export async function cleanupSaleBatches(
   saleId: string,
   packageType: string | null | undefined,
   netQuantitiesByProduct: Map<string, number>,
-  lotRestores?: Map<string, number>
+  lotRestores?: Map<string, number>,
+  fgLotRestores?: Map<string, number>
 ) {
   await prisma.stockMovement.deleteMany({ where: { shopId, referenceId: saleId, type: 'sale' } });
+
+  // Finished-Goods lot draws (Bada Udyog) are independent of the regular
+  // Batch/raw-material draws below — a mill sale can have both at once — so
+  // this always runs, never short-circuited by the lotRestores branch next.
+  if (fgLotRestores && fgLotRestores.size) await restoreFgLotQuantities(prisma, shopId, fgLotRestores);
 
   // Exact: the lots the sale really drew from (all packages). Only when the sale has no lot record at all
   // does the old "latest lot" convention apply (wholesale tier only).
@@ -510,6 +535,23 @@ export async function restoreBatchQuantities(
       await prisma.batch.update({ where: { id: latestBatch.id }, data: { quantity: { increment: qty } } });
     }
   }
+}
+
+/**
+ * Puts quantity back on the exact Finished-Goods lots a deleted mill_v2
+ * sale drew from (see SaleItemFgLot). Mirrors restoreToDrawnLots below for
+ * the Batch model — FinishedGoodsLot is a separate table with its own
+ * available_quantity column, so it needs its own restore statement.
+ */
+export async function restoreFgLotQuantities(prisma: Prisma.TransactionClient | PrismaClient, shopId: string, fgLotRestores: Map<string, number>) {
+  const entries = [...fgLotRestores.entries()].filter(([, qty]) => qty > 0);
+  if (!entries.length) return;
+  await (prisma as any).$executeRawUnsafe(
+    `UPDATE finished_goods_lots SET available_quantity = finished_goods_lots.available_quantity + v.qty
+       FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::numeric[]) AS qty) AS v
+      WHERE finished_goods_lots.id = v.id::uuid AND finished_goods_lots.shop_id = $3::uuid`,
+    entries.map(([id]) => id), entries.map(([, qty]) => qty), shopId,
+  );
 }
 
 /** Puts quantity back on the exact lots a deleted/edited sale drew from. Lots that no longer exist are skipped. */
