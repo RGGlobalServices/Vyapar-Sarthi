@@ -229,24 +229,29 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     if (gstPercent > 0) savedSlabRef.current = gstPercent;
   }, [gstPercent]);
 
-  // What the input displays. 'inclusive' mode (Excl label) shows the
-  // extracted base; 'exclusive' mode (Incl label) shows item.price as-is.
-  const getBase = () => mode === 'inclusive' && gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
+  // Internal-only helper (breakdown text, changeGstSlab) — the true pre-tax
+  // base reverse-extracted from the current final price. NOT used for what
+  // the input displays: showing this extracted (smaller) number in the
+  // PRICE box the moment "Excl" was clicked read as "the selling price just
+  // got cut", even though nothing had actually changed yet — reported live.
+  const getBase = () => gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
 
-  const [localVal, setLocalVal] = useState(() => (Math.round(getBase() * 100) / 100).toString());
+  // The PRICE box always shows item.price — the final amount the customer
+  // pays — in BOTH modes. It never shows a reverse-extracted base, so it
+  // never visibly drops on its own; it only ever changes when a real action
+  // changes what's charged (typing a new amount, switching to Excl to add
+  // GST once, or picking a different rate).
+  const [localVal, setLocalVal] = useState(() => (Math.round(item.price * 100) / 100).toString());
   useEffect(() => {
-    setLocalVal((Math.round(getBase() * 100) / 100).toString());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.price, gstPercent, mode]);
+    setLocalVal((Math.round(item.price * 100) / 100).toString());
+  }, [item.price]);
 
+  // Typed value is always the new final amount, in both modes — simplest
+  // mental model: "PRICE box = what you're charging." Excl mode's "add GST
+  // on top" only happens as a one-time action (switchMode / changeGstSlab
+  // picking a rate), never on every keystroke while typing.
   const writePrice = (typedVal: number) => {
-    if (mode === 'inclusive' && gstPercent > 0) {
-      // Typed = base → store inclusive = base * (1 + gst%)
-      updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent)), lineRef(item));
-    } else {
-      // Typed = final amount (or no GST) → store directly
-      updatePrice(item.id, Math.round(typedVal), lineRef(item));
-    }
+    updatePrice(item.id, Math.round(typedVal), lineRef(item));
   };
 
   // Change the GST slab without switching mode. 'inclusive' (Excl) keeps the
