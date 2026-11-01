@@ -149,6 +149,10 @@ export default function ReturnsPage() {
   const [mixAmounts, setMixAmounts] = useState<{ cash: number; upi: number; card: number }>({ cash: 0, upi: 0, card: 0 });
   const [cashRefundOverride, setCashRefundOverride] = useState<number | null>(null);
   const [udharClearOverride, setUdharClearOverride] = useState<number | null>(null);
+  // Flat-₹ discount on the exchange items' total, same as the billing cart's
+  // own Discount field — reduces what the customer owes toward the Exchange
+  // Value, same way it reduces a normal bill's total.
+  const [exchangeDiscount, setExchangeDiscount] = useState(0);
 
   async function loadExchangeProducts(): Promise<ExchangeProductRow[]> {
     if (exchangeProducts) return exchangeProducts;
@@ -423,7 +427,17 @@ export default function ReturnsPage() {
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const returnValueForExchange = returnItems.reduce((acc, it) => acc + it.returnQty * it.price_per_unit, 0);
-  const exchangeValueTotal = exchangeLines.reduce((acc, l) => acc + l.qty * l.price, 0);
+  // Exchange Value is POST-discount, same as a normal bill's own total —
+  // Gross kept separately just to show the Discount row underneath it.
+  const exchangeGrossTotal = exchangeLines.reduce((acc, l) => acc + l.qty * l.price, 0);
+  const exchangeDiscountCapped = Math.max(0, Math.min(exchangeDiscount, exchangeGrossTotal));
+  const exchangeValueTotal = round2(exchangeGrossTotal - exchangeDiscountCapped);
+  // Same ratio every line's price gets scaled by before it's sent to the
+  // server — exchange_items has no separate discount field, the server
+  // just sums each line's price (see POST /billing/exchange), so the
+  // discount has to already be baked into those prices for the exchange
+  // bill it creates to actually reflect it.
+  const exchangeDiscountScale = exchangeGrossTotal > 0 ? exchangeValueTotal / exchangeGrossTotal : 1;
 
   // Bill payment breakdown at component level (safe when bill is null)
   const billTotalAmt = bill ? Number(bill.total_amount) || 0 : 0;
@@ -509,7 +523,8 @@ export default function ReturnsPage() {
           // arrived at it — no server-side change needed for that part.
           variant: l.variant || (l.color ? `${l.color} / ${l.size || ''}` : (l.size || null)),
           quantity: l.qty,
-          price: l.price,
+          // Discount-scaled — see exchangeDiscountScale above.
+          price: round2(l.price * exchangeDiscountScale),
           name: l.name
         })),
         ...settlementPayload
@@ -520,6 +535,7 @@ export default function ReturnsPage() {
       setSearchQuery('');
       setExchangeMode(false);
       setExchangeLines([]);
+      setExchangeDiscount(0);
       fetchHistory();
       invalidateReturnCaches();
     } catch (err: any) {
@@ -1014,6 +1030,27 @@ export default function ReturnsPage() {
                         <div className="flex justify-between text-xs border-t border-slate-100 dark:border-slate-800 pt-1">
                           <span className="text-slate-500 font-semibold">{t('netExchangeCredit') || 'Net Exchange Credit'}</span>
                           <span className="font-bold text-slate-900 dark:text-slate-100">₹{effectiveReturnCredit.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {exchangeDiscountCapped > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">{t('exchangeItemsTotal') || 'Exchange Items Total'}</span>
+                          <span className="font-bold text-slate-900 dark:text-slate-100">₹{exchangeGrossTotal.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {exchangeLines.length > 0 && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">{t('exchangeDiscountLabel') || 'Discount'}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400">₹</span>
+                            <input
+                              type="number" min={0}
+                              value={exchangeDiscount || ''}
+                              onChange={e => setExchangeDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                              placeholder="0"
+                              className="w-16 text-right text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
                         </div>
                       )}
                       <div className="flex justify-between text-xs">

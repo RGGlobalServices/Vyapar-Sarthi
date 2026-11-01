@@ -251,6 +251,8 @@
     "remove": "हटाएं",
     "noExchangeItemsYet": "अभी तक कोई एक्सचेंज आइटम नहीं जोड़ा गया।",
     "returnValueLabel": "रिटर्न मूल्य",
+    "exchangeItemsTotal": "एक्सचेंज आइटम कुल",
+    "exchangeDiscountLabel": "छूट",
     "exchangeValueLabel": "एक्सचेंज मूल्य",
     "differenceLabel": "अंतर",
     "customerPaysMore": "ग्राहक को अंतर राशि देनी होगी",

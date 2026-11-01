@@ -251,6 +251,8 @@
     "remove": "Remove",
     "noExchangeItemsYet": "No exchange items added yet.",
     "returnValueLabel": "Return Value",
+    "exchangeItemsTotal": "Exchange Items Total",
+    "exchangeDiscountLabel": "Discount",
     "exchangeValueLabel": "Exchange Value",
     "differenceLabel": "Difference",
     "customerPaysMore": "Customer needs to pay the difference",

@@ -251,6 +251,8 @@
     "remove": "काढा",
     "noExchangeItemsYet": "अजून कोणताही एक्सचेंज आयटम जोडलेला नाही.",
     "returnValueLabel": "परतावा मूल्य",
+    "exchangeItemsTotal": "एक्सचेंज आयटम एकूण",
+    "exchangeDiscountLabel": "सवलत",
     "exchangeValueLabel": "एक्सचेंज मूल्य",
     "differenceLabel": "फरक",
     "customerPaysMore": "ग्राहकाला फरकाची रक्कम द्यावी लागेल",
