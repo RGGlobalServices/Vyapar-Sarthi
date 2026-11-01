@@ -8,6 +8,7 @@ import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { checkLargeTransactionAlert, checkLowStockAlerts } from '@/lib/server/notificationsEngine';
 import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
+import { buildGstBreakdownFromCalculatedLines } from '@/lib/gst';
 import { isMillBillingPackage, isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { assertOwned } from '@/lib/server/ownership';
@@ -345,7 +346,20 @@ export const POST = handle(async (req) => {
               // same here from the same calculateInvoice() result used to
               // derive totalAmount above.
               discountAmount: calcResult.totalDiscount || null,
-              gstDetails: body.gst_details ?? undefined,
+              // Built from calcResult.items — the SAME authoritative,
+              // discount-exempt-charges-aware calculation gstAmount above
+              // comes from — never the client's own gst_details. The client
+              // computes its own breakdown client-side (lib/gst.ts's
+              // computeGst(), called with its own copy of items/discount) to
+              // show it live while billing, but that was a second,
+              // independent calculation the server never verified; a bill
+              // with discount-exempt charges disagreed with it, and the
+              // printed/downloaded PDF (which reads gst_details) showed a
+              // different Taxable Value than the invoice detail page (which
+              // reads the server's own gstAmount).
+              gstDetails: billType === 'gst'
+                ? (buildGstBreakdownFromCalculatedLines(calcResult.items, !!body.gst_inter_state) as any)
+                : undefined,
               billImageUrl: body.bill_image_url || null,
               isManual: body.is_manual === true,
               createdAt: body.created_at ? new Date(body.created_at) : undefined,

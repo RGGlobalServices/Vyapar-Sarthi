@@ -1078,7 +1078,14 @@ function StandardBillingUI() {
         payment_details: isEmi ? {} : { ...splitPayments, udhar: remainingAmount },
         bill_type: billType,
         gst_amount: isGstBill ? gst.totalGst : null,
+        // Informational only — the server builds the authoritative
+        // gst_details itself (see buildGstBreakdownFromCalculatedLines).
+        // gst_inter_state still matters: it's the one input the server has
+        // no other way to know (CGST+SGST vs IGST) — previously never sent
+        // at all, so an Inter-state (IGST) bill was always saved/printed as
+        // CGST+SGST regardless of this screen's own toggle.
         gst_details: isGstBill ? gst : null,
+        gst_inter_state: gstInterState,
         invoice_number: billNumber,
       };
 

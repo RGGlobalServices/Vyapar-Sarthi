@@ -2112,7 +2112,14 @@ export default function WholesaleBillingUI() {
         payment_details: { ...splitPayments, udhar: grandRemaining, ...paymentDetailsExtra },
         bill_type: billType,
         gst_amount: isGstBill ? gst.totalGst : null,
+        // Informational only now — the server builds the authoritative
+        // gst_details itself from its own calculateInvoice() result (see
+        // buildGstBreakdownFromCalculatedLines), the same one gst_amount/
+        // total_amount already come from, instead of trusting this client-
+        // computed copy. gst_inter_state still matters: it's the one input
+        // the server has no other way to know (CGST+SGST vs IGST).
         gst_details: isGstBill ? gst : null,
+        gst_inter_state: gstInterState,
       };
 
       let dbSale: any = null;

@@ -6,6 +6,7 @@ import { openVariantStores, adjustVariantStores, closeVariantStores, variantAvai
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { calculateInvoice, InputLineItem, DiscountInput, BillType } from '@/lib/financialEngine';
+import { buildGstBreakdownFromCalculatedLines } from '@/lib/gst';
 import { ApiError } from '@/lib/server/http';
 import { assertOwned } from '@/lib/server/ownership';
 
@@ -347,7 +348,11 @@ export async function createSaleEffects(
       invoice_number,
       billType,
       gstAmount,
-      gstDetails: body.gst_details ?? undefined,
+      // Server-authoritative, same reasoning as POST /billing — see
+      // buildGstBreakdownFromCalculatedLines's own comment.
+      gstDetails: billType === 'gst'
+        ? (buildGstBreakdownFromCalculatedLines(calcResult.items, !!body.gst_inter_state) as any)
+        : undefined,
       billImageUrl: body.bill_image_url || null,
       isManual: body.is_manual === true,
       createdAt: overrides?.createdAt ?? (body.created_at ? new Date(body.created_at) : undefined),

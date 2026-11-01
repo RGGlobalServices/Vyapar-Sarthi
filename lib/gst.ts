@@ -142,3 +142,90 @@ export function computeGst(
     hsnGroups,
   };
 }
+
+/**
+ * Builds the same GstBreakdown shape, but from lines whose taxable/GST
+ * amounts are ALREADY authoritative (financialEngine's calculateInvoice —
+ * which, unlike this file's own computeGst(), knows about discount-exempt
+ * lines like Transport/Loading/Packing/Other charges). No gross/discount
+ * math happens here — just grouping already-correct per-line figures by
+ * rate and HSN.
+ *
+ * Exists because POST /billing used to store whatever `gst_details` the
+ * CLIENT computed (via computeGst() above, called with its own items/
+ * discount at billing time) as-is, untouched by the server — a second,
+ * independent GST calculation that could disagree with the server's own
+ * authoritative gstAmount, and did: a bill with discount-exempt charges
+ * showed the correct GST total on the invoice detail page (server-computed)
+ * but a DIFFERENT Taxable Value on the printed/downloaded PDF (client-
+ * computed gst_details), because only the server-side calculation knew to
+ * exclude the charges from the discount. The server now builds gstDetails
+ * itself from the same calculateInvoice() result used for gstAmount, so
+ * both can never disagree again.
+ */
+export function buildGstBreakdownFromCalculatedLines(
+  lines: Array<{ taxableAmount: number; gstAmount: number; gstPercent: number; hsnCode?: string | null }>,
+  interState: boolean,
+): GstBreakdown {
+  const byRate = new Map<number, { taxable: number; gst: number }>();
+  const byHsn = new Map<string, { rate: number; taxable: number; gst: number }>();
+  let taxable = 0;
+  let totalGst = 0;
+
+  for (const line of lines) {
+    const rate = Number(line.gstPercent) || 0;
+    const lineTaxable = Number(line.taxableAmount) || 0;
+    const lineGst = Number(line.gstAmount) || 0;
+
+    taxable += lineTaxable;
+    totalGst += lineGst;
+
+    const g = byRate.get(rate) || { taxable: 0, gst: 0 };
+    g.taxable += lineTaxable;
+    g.gst += lineGst;
+    byRate.set(rate, g);
+
+    const hsnKey = (line.hsnCode || '-').trim() || '-';
+    const h = byHsn.get(hsnKey) || { rate, taxable: 0, gst: 0 };
+    h.taxable += lineTaxable;
+    h.gst += lineGst;
+    byHsn.set(hsnKey, h);
+  }
+
+  const groups: GstRateGroup[] = [...byRate.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, g]) => ({
+      rate,
+      taxable: round2(g.taxable),
+      cgst: interState ? 0 : round2(g.gst / 2),
+      sgst: interState ? 0 : round2(g.gst / 2),
+      igst: interState ? round2(g.gst) : 0,
+    }));
+
+  const hsnGroups: GstHsnGroup[] = [...byHsn.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([hsnCode, h]) => ({
+      hsnCode,
+      rate: h.rate,
+      taxable: round2(h.taxable),
+      cgst: interState ? 0 : round2(h.gst / 2),
+      sgst: interState ? 0 : round2(h.gst / 2),
+      igst: interState ? round2(h.gst) : 0,
+    }));
+
+  const cgst = interState ? 0 : round2(totalGst / 2);
+  const sgst = interState ? 0 : round2(totalGst / 2);
+  const igst = interState ? round2(totalGst) : 0;
+
+  return {
+    interState,
+    taxable: round2(taxable),
+    cgst,
+    sgst,
+    igst,
+    totalGst: round2(totalGst),
+    grandTotal: round2(taxable + totalGst),
+    groups,
+    hsnGroups,
+  };
+}
