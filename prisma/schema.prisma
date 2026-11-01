@@ -716,6 +716,12 @@ model SaleItem {
   variant       String?         @db.VarChar
   variantId     String?         @map("variant_id") @db.VarChar
   itemName      String?         @map("item_name") @db.VarChar
+  // The GST%/HSN actually billed on this line — NOT re-derived from the
+  // product's current catalog values (which can change after the sale).
+  // Null on rows created before this column existed; readers fall back to
+  // the product's current gstPercent/hsnCode for those only.
+  gstPercent    Float?          @map("gst_percent")
+  hsnCode       String?         @map("hsn_code") @db.VarChar
   product       Product?        @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sale          Sale?           @relation(fields: [saleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   batches       SaleItemBatch[]

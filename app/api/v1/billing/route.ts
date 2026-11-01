@@ -355,6 +355,15 @@ export const POST = handle(async (req) => {
                   const qty = merged ? merged.quantity : (Number(rawItem.quantity) || 0);
                   const marginPerUnit = merged && qty > 0 ? round2(merged.netProfit / qty) : 0;
                   const rawName = rawItem.name || rawItem.product_name || rawItem.title || rawItem.itemName;
+                  const dbProduct = pid ? billProductMap.get(pid) : null;
+                  // The rate/HSN actually billed on this line — same formula as the
+                  // batch-aware pass above. Persisted so later views (invoice detail,
+                  // print/PDF, GST filing) show what this line was ACTUALLY charged,
+                  // not the product's current catalog rate (which can drift after the
+                  // sale — a product's GST%/HSN edited later used to silently rewrite
+                  // every past invoice's displayed rate for that product).
+                  const gstRate = Number(rawItem.gst_percent ?? rawItem.gstPercent ?? dbProduct?.gstPercent) || 0;
+                  const hsn = rawItem.hsn_code || rawItem.hsnCode || dbProduct?.hsnCode || null;
                   return {
                     productId: pid || null,
                     unit: rawItem.unit || billProductMap.get(pid)?.baseUnit || null,
@@ -363,6 +372,8 @@ export const POST = handle(async (req) => {
                     quantity: qty,
                     pricePerUnit: sp,
                     marginPerUnit,
+                    gstPercent: gstRate,
+                    hsnCode: hsn,
                   };
                 }),
               },

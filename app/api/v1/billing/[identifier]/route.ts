@@ -141,8 +141,13 @@ export const GET = handle<Ctx>(async (req, { params }) => {
         quantity: item.quantity,
         returned_quantity: returnedQty,
         total: effectivePpu * (item.quantity || 0),
-        hsnCode: item.product?.hsnCode || '',
-        gstPercent: item.product?.gstPercent || 0,
+        // Prefer what was ACTUALLY billed (stored on the SaleItem itself) over
+        // the product's current catalog value, which can drift after the sale
+        // — editing a product's GST%/HSN later used to silently rewrite every
+        // past invoice's displayed rate for it. Falls back to the product only
+        // for rows saved before these columns existed (both null there).
+        hsnCode: (item as any).hsnCode ?? item.product?.hsnCode ?? '',
+        gstPercent: (item as any).gstPercent ?? item.product?.gstPercent ?? 0,
         ...(isMillSale ? { unit: item.unit || null, variant: item.variant || null, batch_numbers: millBatchNames.get(item.id) || [] } : {}),
       };
     }),

@@ -359,6 +359,9 @@ export async function createSaleEffects(
           const calcLine = calcResult.items.find((c: any, idx: number) => idx === items.indexOf(rawItem));
           const marginPerUnit = calcLine && qty > 0 ? round2(calcLine.netProfit / qty) : 0;
           const rawName = rawItem.name || rawItem.product_name || rawItem.title || rawItem.itemName;
+          // The rate/HSN actually billed — see SaleItem.gstPercent comment.
+          const gstRate = Number(rawItem.gst_percent ?? rawItem.gstPercent ?? dbProduct?.gstPercent) || 0;
+          const hsn = rawItem.hsn_code || rawItem.hsnCode || dbProduct?.hsnCode || null;
           return {
             productId: pid || null,
             unit: rawItem.unit || dbProduct?.baseUnit || null,
@@ -367,6 +370,8 @@ export async function createSaleEffects(
             quantity: qty,
             pricePerUnit: sp,
             marginPerUnit,
+            gstPercent: gstRate,
+            hsnCode: hsn,
           };
         }),
       },

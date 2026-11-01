@@ -291,6 +291,9 @@ export async function handleMillSale(req: Request, shop: any, body: any): Promis
                   quantity: p.qty,
                   pricePerUnit: p.rate,
                   marginPerUnit: calc.lines[i].marginPerUnit,
+                  // The rate/HSN actually billed — see SaleItem.gstPercent comment.
+                  gstPercent: lineRates[i],
+                  hsnCode: lineHsn[i],
                 };
               }),
             },
