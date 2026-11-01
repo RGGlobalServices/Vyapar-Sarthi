@@ -382,16 +382,28 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 )}
                 {discountAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-medium tracking-tight">{t('discountApplied')}</span>
-                    <span className="text-orange-500 font-bold">− ₹{discountAmount.toLocaleString('en-IN')}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 font-medium tracking-tight">{t('subtotal')}</span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{(totalAmount + discountAmount).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 font-medium tracking-tight">{t('discountApplied')}</span>
+                      <span className="text-orange-500 font-bold">− ₹{discountAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
                 )}
                 {gstAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-medium tracking-tight">{t('gstAmount')}</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{gstAmount.toLocaleString('en-IN')}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 font-medium tracking-tight">{t('taxableValue')}</span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{(totalAmount - gstAmount).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500 font-medium tracking-tight">{t('gstAmount')}</span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{gstAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
                 )}
                 {chargesTotal > 0 && (
                   <div className="flex justify-between text-sm">

@@ -2625,6 +2625,7 @@
     "pricingType": "मूल्य प्रकार",
     "subtotal": "उप-योग",
     "discountApplied": "छूट",
+    "taxableValue": "कर योग्य राशि",
     "gstAmount": "GST राशि",
     "chargesTotal": "अतिरिक्त शुल्क",
     "roundOff": "राउंड ऑफ",

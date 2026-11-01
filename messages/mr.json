@@ -2625,6 +2625,7 @@
     "pricingType": "किंमत प्रकार",
     "subtotal": "उप-एकूण",
     "discountApplied": "सवलत",
+    "taxableValue": "करपात्र रक्कम",
     "gstAmount": "GST रक्कम",
     "chargesTotal": "अतिरिक्त शुल्क",
     "roundOff": "राउंड ऑफ",

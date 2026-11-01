@@ -1711,6 +1711,7 @@
     "pricingType": "Pricing Type",
     "subtotal": "Subtotal",
     "discountApplied": "Discount",
+    "taxableValue": "Taxable Value",
     "gstAmount": "GST Amount",
     "chargesTotal": "Charges",
     "roundOff": "Round Off",
