@@ -741,19 +741,11 @@ export default function ReturnsPage() {
                   <CardTitle className="text-slate-900 dark:text-slate-200">{t('returnItems') || 'Return Items'}</CardTitle>
                   <CardDescription className="text-slate-500">{t('selectItemsToReturn') || 'Select items and quantity to return'}</CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  {selectedReturnLineCount > 0 && (
-                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                      <CheckCircle size={14} />
-                      {t('selectedItemsCount', { count: selectedReturnLineCount, qty: selectedReturnQty }) || `${selectedReturnLineCount} item(s) selected · Qty ${selectedReturnQty}`}
-                    </div>
-                  )}
-                  {bill && (
-                     <div className="flex items-center gap-2 text-xs font-bold text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20">
-                       <History size={14} /> {t('readyForReturn') || 'Ready for Return'}
-                     </div>
-                  )}
-                </div>
+                {bill && (
+                   <div className="flex items-center gap-2 text-xs font-bold text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20">
+                     <History size={14} /> {t('readyForReturn') || 'Ready for Return'}
+                   </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-auto">
@@ -1227,6 +1219,12 @@ export default function ReturnsPage() {
                   </div>
                 )}
 
+                {selectedReturnLineCount > 0 && (
+                  <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 w-fit mb-3">
+                    <CheckCircle size={14} />
+                    {t('selectedItemsCount', { count: selectedReturnLineCount, qty: selectedReturnQty }) || `${selectedReturnLineCount} item(s) selected · Qty ${selectedReturnQty}`}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   {!exchangeMode && (
                     <div>
