@@ -194,6 +194,7 @@
     "returnItems": "Return Items",
     "selectItemsToReturn": "Select items and quantity to return",
     "readyForReturn": "Ready for Return",
+    "selectedItemsCount": "{count} item(s) selected · Qty {qty}",
     "searchInvoicePrompt": "Search for an invoice to start processing a return",
     "price": "Price",
     "purchased": "Purchased",

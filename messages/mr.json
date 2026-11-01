@@ -194,6 +194,7 @@
     "returnItems": "परतावा आयटम",
     "selectItemsToReturn": "परत करण्यासाठी आयटम आणि प्रमाण निवडा",
     "readyForReturn": "परताव्यासाठी तयार",
+    "selectedItemsCount": "{count} आयटम निवडले · प्रमाण {qty}",
     "searchInvoicePrompt": "परतावा प्रक्रिया सुरू करण्यासाठी इनव्हॉइस शोधा",
     "price": "किंमत",
     "purchased": "खरेदी केले",

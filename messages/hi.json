@@ -194,6 +194,7 @@
     "returnItems": "रिटर्न आइटम",
     "selectItemsToReturn": "लौटाने के लिए आइटम और मात्रा चुनें",
     "readyForReturn": "रिटर्न के लिए तैयार",
+    "selectedItemsCount": "{count} आइटम चुने गए · मात्रा {qty}",
     "searchInvoicePrompt": "रिटर्न प्रोसेस शुरू करने के लिए इनवॉइस खोजें",
     "price": "मूल्य",
     "purchased": "खरीदा गया",

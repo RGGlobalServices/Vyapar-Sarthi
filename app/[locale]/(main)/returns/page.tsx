@@ -429,6 +429,10 @@ export default function ReturnsPage() {
   };
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
+  // Shown as a running "N items selected" badge above the item list — same
+  // for Dukan/Vyapar/Udyog since this screen's item picker is package-agnostic.
+  const selectedReturnLineCount = returnItems.filter((i) => i.returnQty > 0).length;
+  const selectedReturnQty = returnItems.reduce((s, i) => s + (i.returnQty || 0), 0);
   const returnValueForExchange = returnItems.reduce((acc, it) => acc + it.returnQty * it.price_per_unit, 0);
   // Exchange Value is POST-discount, same as a normal bill's own total —
   // Gross kept separately just to show the Discount row underneath it.
@@ -737,11 +741,19 @@ export default function ReturnsPage() {
                   <CardTitle className="text-slate-900 dark:text-slate-200">{t('returnItems') || 'Return Items'}</CardTitle>
                   <CardDescription className="text-slate-500">{t('selectItemsToReturn') || 'Select items and quantity to return'}</CardDescription>
                 </div>
-                {bill && (
-                   <div className="flex items-center gap-2 text-xs font-bold text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20">
-                     <History size={14} /> {t('readyForReturn') || 'Ready for Return'}
-                   </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {selectedReturnLineCount > 0 && (
+                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                      <CheckCircle size={14} />
+                      {t('selectedItemsCount', { count: selectedReturnLineCount, qty: selectedReturnQty }) || `${selectedReturnLineCount} item(s) selected · Qty ${selectedReturnQty}`}
+                    </div>
+                  )}
+                  {bill && (
+                     <div className="flex items-center gap-2 text-xs font-bold text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full border border-orange-400/20">
+                       <History size={14} /> {t('readyForReturn') || 'Ready for Return'}
+                     </div>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-auto">
