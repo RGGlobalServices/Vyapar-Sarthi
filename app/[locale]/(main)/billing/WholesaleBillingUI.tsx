@@ -161,9 +161,18 @@ const GST_SLABS = [0, 5, 12, 18, 28];
 // SEMANTIC: item.price is always the GST-inclusive amount the customer pays
 // (what computeGst() and the financial engine expect).
 //
-// Toggle meaning (matches how Indian B2B sellers think about GST):
-//   Excl = "No GST charged" — selling price is what customer pays, gstPercent = 0.
-//   Incl = "GST added on top of selling price" — customer pays base + GST.
+// Toggle LABEL meaning — matches the product-level Including/Excluding GST
+// setting (WholesaleProductsUI) and standard GST usage, NOT the internal
+// `mode` variable name below:
+//   "Excl" button (internal mode='inclusive') = the price is EXCLUDING GST —
+//     it's the pre-tax base, and GST gets ADDED ON TOP for the final total.
+//   "Incl" button (internal mode='exclusive') = nothing more to add — the
+//     price as typed/set is the final amount the customer pays, gstPercent = 0.
+// A cashier reported the OLD labels ("Excl"=no GST, "Incl"=GST on top) as
+// backwards from what every other GST-including/excluding toggle in the app
+// means — clicking "Excl" expecting "add GST on top of this price" instead
+// zeroed the GST out. Only the user-facing label/tooltip text changed below;
+// the underlying mode/state names and math are untouched.
 //
 // The input always shows the BASE (selling) price. Switching modes never
 // changes the displayed number — only the total (and item.price) changes.
@@ -298,13 +307,13 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
                   key={m}
                   type="button"
                   onClick={() => switchMode(m)}
-                  title={m === 'inclusive' ? 'Add GST on top of this price' : 'No GST on this item'}
+                  title={m === 'inclusive' ? 'Price excludes GST — GST is added on top of it' : 'Price as shown is final — nothing more is added'}
                   className={cn(
                     'px-1 py-0.5 text-[9px] font-bold transition-colors',
                     mode === m ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
                   )}
                 >
-                  {m === 'inclusive' ? 'Incl' : 'Excl'}
+                  {m === 'inclusive' ? 'Excl' : 'Incl'}
                 </button>
               ))}
             </div>
