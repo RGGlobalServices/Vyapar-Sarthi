@@ -1452,6 +1452,7 @@
     "itemCol": "ITEM",
     "unitCol": "UNIT",
     "qtyCol": "QTY",
+    "mrpCol": "MRP",
     "priceCol": "PRICE",
     "totalCol": "TOTAL",
     "actionCol": "ACTION",

@@ -2366,6 +2366,7 @@
     "itemCol": "सामान",
     "unitCol": "इकाई",
     "qtyCol": "मात्रा",
+    "mrpCol": "MRP",
     "priceCol": "कीमत",
     "totalCol": "कुल",
     "actionCol": "कार्रवाई",

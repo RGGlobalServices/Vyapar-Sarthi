@@ -2366,6 +2366,7 @@
     "itemCol": "वस्तू",
     "unitCol": "एकक",
     "qtyCol": "प्रमाण",
+    "mrpCol": "MRP",
     "priceCol": "किंमत",
     "totalCol": "एकूण",
     "actionCol": "कृती",

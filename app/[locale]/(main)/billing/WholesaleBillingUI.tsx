@@ -2623,6 +2623,7 @@ export default function WholesaleBillingUI() {
                     {bizConfig.hasLiquorSpecs && <th className="px-3 py-3 font-black uppercase text-xs tracking-wider w-16">{t('ml') || 'ML'}</th>}
                     {isMill && isGstBill && <th className="px-3 py-3 font-black uppercase text-xs tracking-wider w-20">{tMill('hsn') || 'HSN'}</th>}
                     <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-center w-24">{t('qty') || 'Qty'}</th>
+                    {!isMill && <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-right w-20">{t('mrp') || 'MRP'}</th>}
                     <th className="px-3 py-3 font-black uppercase text-xs tracking-wider text-right w-32">{isMill ? (
                       <div className="flex flex-col items-end gap-1">
                         <span>{isGstBill && rateBasis === 'incl' ? 'Rate (Incl. GST)' : tMill('rateExclGst')}</span>
@@ -2936,6 +2937,11 @@ export default function WholesaleBillingUI() {
                           )}
                         </div>
                       </td>
+                      {!isMill && (
+                        <td className="px-3 py-3 text-right align-top text-xs text-slate-400 tabular-nums">
+                          {Number(item.mrp) > 0 ? `₹${item.mrp}` : '-'}
+                        </td>
+                      )}
                       <td className="px-2 py-3 text-right align-top">
                         {isMill
                           ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} basis={rateBasis} />
@@ -3109,7 +3115,12 @@ export default function WholesaleBillingUI() {
                         {/* Rate & Qty row */}
                         <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                           <div className="flex flex-col min-w-0">
-                            <span className="text-[10px] text-slate-400 mb-0.5">{isMill ? tMill('rateExclGst') : (t('price') || 'Rate')}</span>
+                            <span className="text-[10px] text-slate-400 mb-0.5">
+                              {isMill ? tMill('rateExclGst') : (t('price') || 'Rate')}
+                              {!isMill && Number(item.mrp) > 0 && (
+                                <span className="ml-1.5 text-slate-300 dark:text-slate-600">· {t('mrp') || 'MRP'} ₹{item.mrp}</span>
+                              )}
+                            </span>
                             {isMill
                               ? <MillRateInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} basis={rateBasis} />
                               : <CartPriceInput item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />}

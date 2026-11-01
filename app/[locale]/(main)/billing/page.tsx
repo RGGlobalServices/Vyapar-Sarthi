@@ -1667,6 +1667,7 @@ function StandardBillingUI() {
                   <th className="px-3 py-2.5">{t('itemCol') || 'ITEM'}</th>
                   {bizConfig.hasLiquorSpecs && <th className="px-3 py-2.5 whitespace-nowrap">{t('ml') || 'ML'}</th>}
                   <th className="px-4 py-2.5 whitespace-nowrap text-center">{t('qtyCol') || 'QTY'}</th>
+                  <th className="px-4 py-2.5 text-right whitespace-nowrap">{t('mrpCol') || 'MRP'}</th>
                   <th className="px-4 py-2.5 text-right whitespace-nowrap">{t('priceCol') || 'PRICE'}</th>
                   <th className="px-4 py-2.5 text-right whitespace-nowrap">{t('totalCol') || 'TOTAL'}</th>
                   <th className="px-3 py-2.5 text-center whitespace-nowrap">{t('actionCol') || 'ACT'}</th>
@@ -1939,6 +1940,9 @@ function StandardBillingUI() {
                       {typeof maxQty === 'number' && !item.is_loose && item.quantity >= maxQty && (
                         <p className="text-[10px] text-amber-500 font-semibold mt-1">{t('onlyXInStock', {count: maxQty}) || `Only ${maxQty} in stock`}</p>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right align-top text-xs text-slate-400 tabular-nums">
+                      {Number(item.mrp) > 0 ? `₹${item.mrp}` : '-'}
                     </td>
                     <td className="px-4 py-3 text-right align-top">
                       <CartPriceInputRetail item={item} updatePrice={updatePrice} updateGstPercent={updateGstPercent} isGstBill={isGstBill} />
