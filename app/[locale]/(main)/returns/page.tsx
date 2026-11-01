@@ -46,6 +46,7 @@ interface ExchangeProductRow {
   id: string;
   name: string;
   price: number;
+  mrp: number;
   currentStock: number | null;
   variants: VariantOption[];
 }
@@ -57,6 +58,7 @@ interface ExchangeLine {
   variant: string | null;
   qty: number;
   price: number;
+  mrp: number;
   maxStock: number | null;
 }
 
@@ -145,6 +147,7 @@ export default function ReturnsPage() {
         id: p.id,
         name: p.name,
         price: Number(p.sellingPrice ?? p.mrp ?? 0),
+        mrp: Number(p.mrp) || 0,
         currentStock: p.currentStock === null || p.currentStock === undefined ? null : Number(p.currentStock),
         variants: computeVariantOptions(p),
       }));
@@ -176,6 +179,7 @@ export default function ReturnsPage() {
         variant: variantKey,
         qty: 1,
         price: variantOpt?.price ?? pickedProduct.price,
+        mrp: pickedProduct.mrp || 0,
         maxStock: variantOpt ? variantOpt.stock : pickedProduct.currentStock,
       };
       setExchangeLines(prev => [...prev, line]);
@@ -848,6 +852,7 @@ export default function ReturnsPage() {
                             <div className="w-full sm:w-auto sm:flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 dark:text-slate-200 truncate">{line.name}</p>
                               {line.variant && <p className="text-[10px] text-indigo-500 font-bold">{line.variant}</p>}
+                              {line.mrp > 0 && <p className="text-[10px] text-slate-400">MRP ₹{line.mrp.toLocaleString('en-IN')}</p>}
                             </div>
                             <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
                               {/* Qty with +/- buttons */}
