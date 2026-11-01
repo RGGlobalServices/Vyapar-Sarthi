@@ -179,12 +179,21 @@ const GST_SLABS = [0, 5, 12, 18, 28];
 const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any) => {
   const gstPercent = Number(item.gstPercent) || 0;
 
-  // savedSlabRef holds the GST rate the user last chose (even when mode=Excl clears gstPercent to 0).
+  // savedSlabRef holds the last non-zero GST rate picked, so re-selecting
+  // "Excl" after a trip through 0% doesn't lose it.
   const savedSlabRef = useRef<number>(gstPercent || 12);
   const initDone = useRef(false);
 
-  // mode: 'exclusive' = no GST (item.price = base, gstPercent = 0)
-  //        'inclusive' = GST on top (item.price = base*(1+slab%), gstPercent = slab)
+  // mode is PURELY which number the input shows / how typing is interpreted
+  // — it is otherwise independent of gstPercent, and switching it NEVER
+  // mutates item.price or item.gstPercent (matches CartPriceInputRetail's
+  // "mode switch is purely cosmetic" contract, so the Incl/Excl % selector
+  // and breakdown stay live and editable in BOTH modes instead of only one):
+  //   'inclusive' (labeled "Excl") = input shows the BASE; GST is added on
+  //     top of whatever is typed to get item.price.
+  //   'exclusive' (labeled "Incl") = input shows item.price directly; it IS
+  //     the final amount, gstPercent just controls how it's split into
+  //     taxable + tax on the invoice, not what the customer pays.
   const [mode, setMode] = useState<'inclusive' | 'exclusive'>('exclusive');
 
   // On first mount: respect the product's OWN configured GST (set at
@@ -204,11 +213,11 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     }
     if (item.gstInclusive) {
       // Product's price already has GST baked in — it's already the final
-      // amount, no markup needed, just surface the Incl mode + rate.
-      setMode('inclusive');
+      // amount, no markup needed, just surface the rate + breakdown.
+      setMode('exclusive');
     } else {
-      // Product's price excludes GST — add it on top, same math switchMode
-      // uses, so the GST bill actually charges tax by default.
+      // Product's price excludes GST — add it on top so the GST bill
+      // actually charges tax by default.
       updatePrice(item.id, Math.round(toInclusivePrice(item.price, naturalSlab)), lineRef(item));
       setMode('inclusive');
     }
@@ -220,48 +229,46 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
     if (gstPercent > 0) savedSlabRef.current = gstPercent;
   }, [gstPercent]);
 
-  // Base (exclusive) price to display in the input.
-  // Excl mode: gstPercent=0  → item.price = base → show as-is
-  // Incl mode: gstPercent>0  → item.price = base*(1+slab%) → extract base
-  const getBase = () => gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
+  // What the input displays. 'inclusive' mode (Excl label) shows the
+  // extracted base; 'exclusive' mode (Incl label) shows item.price as-is.
+  const getBase = () => mode === 'inclusive' && gstPercent > 0 ? toExclusivePrice(item.price, gstPercent) : item.price;
 
-  const [localVal, setLocalVal] = useState(() => (Math.round(item.price * 100) / 100).toString());
+  const [localVal, setLocalVal] = useState(() => (Math.round(getBase() * 100) / 100).toString());
   useEffect(() => {
     setLocalVal((Math.round(getBase() * 100) / 100).toString());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.price, gstPercent]);
+  }, [item.price, gstPercent, mode]);
 
-  // User always types the BASE price; we convert to inclusive before storing.
-  // Round to whole rupees so totals are always clean integers.
-  const writePrice = (typedBase: number) => {
-    const inclusive = gstPercent > 0 ? toInclusivePrice(typedBase, gstPercent) : typedBase;
-    updatePrice(item.id, Math.round(inclusive), lineRef(item));
-  };
-
-  // Change GST slab while staying in Incl mode — keep the base price, update inclusive.
-  const changeGstSlab = (newSlab: number) => {
-    const base = getBase();
-    updateGstPercent(item.id, newSlab, lineRef(item));
-    if (newSlab > 0) {
-      updatePrice(item.id, Math.round(toInclusivePrice(base, newSlab)), lineRef(item));
+  const writePrice = (typedVal: number) => {
+    if (mode === 'inclusive' && gstPercent > 0) {
+      // Typed = base → store inclusive = base * (1 + gst%)
+      updatePrice(item.id, Math.round(toInclusivePrice(typedVal, gstPercent)), lineRef(item));
     } else {
-      updatePrice(item.id, Math.round(base), lineRef(item));
+      // Typed = final amount (or no GST) → store directly
+      updatePrice(item.id, Math.round(typedVal), lineRef(item));
     }
   };
 
+  // Change the GST slab without switching mode. 'inclusive' (Excl) keeps the
+  // BASE constant and recomputes the final price for the new rate; 'exclusive'
+  // (Incl) keeps the final price the customer pays constant — only the
+  // taxable/tax split shown on the invoice changes.
+  const changeGstSlab = (newSlab: number) => {
+    if (newSlab > 0) savedSlabRef.current = newSlab;
+    if (mode === 'inclusive') {
+      const base = getBase();
+      updateGstPercent(item.id, newSlab, lineRef(item));
+      updatePrice(item.id, Math.round(newSlab > 0 ? toInclusivePrice(base, newSlab) : base), lineRef(item));
+    } else {
+      updateGstPercent(item.id, newSlab, lineRef(item));
+    }
+  };
+
+  // Purely cosmetic — only changes what the input shows / how typing is
+  // interpreted going forward. Never touches item.price or item.gstPercent,
+  // so the rate and breakdown stay exactly as they were before the click.
   const switchMode = (newMode: 'inclusive' | 'exclusive') => {
     if (newMode === mode) return;
-    const base = getBase();
-    if (newMode === 'exclusive') {
-      // Remove GST: price = base, gstPercent = 0
-      updateGstPercent(item.id, 0, lineRef(item));
-      updatePrice(item.id, Math.round(base), lineRef(item));
-    } else {
-      // Add GST: price = base*(1+slab%), gstPercent = saved slab
-      const slab = savedSlabRef.current || 12;
-      updateGstPercent(item.id, slab, lineRef(item));
-      updatePrice(item.id, Math.round(toInclusivePrice(base, slab)), lineRef(item));
-    }
     setMode(newMode);
   };
 
@@ -291,16 +298,14 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
       {isGstBill && (
         <div className="flex flex-col items-end gap-0.5">
           <div className="flex items-center gap-1">
-            {mode === 'inclusive' && (
-              <select
-                value={gstPercent || savedSlabRef.current}
-                onChange={(e) => changeGstSlab(Number(e.target.value))}
-                title="GST % for this item"
-                className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
-              >
-                {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
-              </select>
-            )}
+            <select
+              value={gstPercent || savedSlabRef.current}
+              onChange={(e) => changeGstSlab(Number(e.target.value))}
+              title="GST % for this item"
+              className="text-[9px] font-bold bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 outline-none text-slate-500 dark:text-slate-400"
+            >
+              {GST_SLABS.map((g) => <option key={g} value={g}>{g}%</option>)}
+            </select>
             <div className="flex bg-slate-100 dark:bg-slate-800 rounded overflow-hidden shrink-0">
               {(['exclusive', 'inclusive'] as const).map((m) => (
                 <button
@@ -318,7 +323,7 @@ const CartPriceInput = ({ item, updatePrice, updateGstPercent, isGstBill }: any)
               ))}
             </div>
           </div>
-          {mode === 'inclusive' && gstPercent > 0 && (
+          {gstPercent > 0 && (
             <div className="text-[9px] text-slate-400 dark:text-slate-500 font-mono text-right leading-tight">
               ₹{basePrice} + ₹{gstAmt.toFixed(2)} GST = <span className="text-emerald-600 dark:text-emerald-400 font-bold">₹{totalPrice.toFixed(2)}</span>
             </div>
