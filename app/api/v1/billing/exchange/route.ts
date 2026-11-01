@@ -90,8 +90,10 @@ export const POST = handle(async (req) => {
       invoice_number: string;
       payment_type: string;
       created_at: Date;
+      bill_type: string | null;
+      payment_details: unknown;
     }>>`
-      SELECT id, shop_id, total_amount, amount_paid, customer_id, invoice_number, payment_type, created_at
+      SELECT id, shop_id, total_amount, amount_paid, customer_id, invoice_number, payment_type, created_at, bill_type, payment_details
       FROM sales
       WHERE id = ${bill_id}::uuid AND shop_id = ${shop.id}::uuid
       FOR UPDATE
@@ -265,7 +267,7 @@ export const POST = handle(async (req) => {
 
     let exchangeAmountPaid: number;
     let exchangePaymentType: string;
-    let exchangePaymentDetails: Record<string, number> | null = null;
+    let exchangePaymentDetails: Record<string, number | string> | null = null;
     if (difference <= 0) {
       exchangeAmountPaid = exchangeValue;
       exchangePaymentType = 'Cash';
@@ -285,6 +287,22 @@ export const POST = handle(async (req) => {
       exchangePaymentType = settlement_method!;
     }
 
+    // Carry the original bill's own classification onto the replacement sale
+    // instead of quietly resetting it — a GST/wholesale bill's exchange
+    // should still read as GST/wholesale, not silently become a plain
+    // non-GST retail bill (customer is already carried via customerId above).
+    const originalPricingMode = (() => {
+      try {
+        const pd = saleRow.payment_details as any;
+        const parsed = typeof pd === 'string' ? JSON.parse(pd) : pd;
+        return parsed?.pricingMode === 'wholesale' || parsed?.pricingMode === 'retail' ? parsed.pricingMode : null;
+      } catch { return null; }
+    })();
+    if (originalPricingMode) {
+      exchangePaymentDetails = { ...(exchangePaymentDetails || {}), pricingMode: originalPricingMode };
+    }
+    const exchangeBillType = saleRow.bill_type === 'gst' ? 'gst' : 'non_gst';
+
     const newSale = await tx.sale.create({
       data: {
         shopId: shop.id,
@@ -295,7 +313,7 @@ export const POST = handle(async (req) => {
         amountPaid: exchangeAmountPaid,
         paymentDetails: exchangePaymentDetails ? (exchangePaymentDetails as any) : undefined,
         invoice_number: exchangeInvoiceNumber,
-        billType: 'non_gst',
+        billType: exchangeBillType,
         items: {
           create: preparedExchange.map((p) => ({
             productId: p.productId,
