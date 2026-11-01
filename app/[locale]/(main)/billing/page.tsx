@@ -1050,9 +1050,18 @@ function StandardBillingUI() {
         product_id: typeof item.id === 'string' ? item.id : null,
         name: item.name,
         unit: item.unit,
-        variant: item.variant || null,
-        color: item.color || null,
-        size: item.size || null,
+        // A Single product (no formal variants) has no item.variant at all
+        // — but the salesman may still have hand-typed a colour/size note
+        // via the cart's editable chips. The server only ever stores
+        // SaleItem.variant (no separate color/size columns), and never
+        // read the color/size fields this payload used to send alongside
+        // it — so that note never reached a saved bill, print, or the
+        // Return screen. Folding it into variant itself (same "Color /
+        // Size" key format createSaleEffects/GET already split on) is what
+        // actually persists it; adjustVariantStores on the server already
+        // no-ops safely (just a warning) when a variant key doesn't match
+        // a real stock row, so this is safe even for an untracked product.
+        variant: item.variant || (item.color ? `${item.color} / ${item.size || ''}` : (item.size || null)),
         quantity: item.quantity,
         price_per_unit: item.price,
         purchase_price: item.cost || 0,

@@ -39,7 +39,7 @@ import { printBill } from '@/lib/printBill';
 import { generateUpiQrSvg } from '@/lib/upi';
 import ManualBillUpload from '@/components/ManualBillUpload';
 import DiscountInput from '@/components/DiscountInput';
-import { splitVariantKey, makeVariantKey } from '@/components/ColorSizeVariantGrid';
+import { splitVariantKey, makeVariantKey, isColorSizeVariants, colorsFromVariants, sizesFromVariants } from '@/components/ColorSizeVariantGrid';
 import { toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 import LiquorCartMatrix from '@/components/billing/LiquorCartMatrix';
 import { extractMlToken } from '@/lib/liquorMatrix';
@@ -698,7 +698,7 @@ export default function WholesaleBillingUI() {
   const {
     items, addItem, removeItem, updateQuantity, updatePrice, updateGstPercent,
     updateBatchNumber, updateExpiryDate, updateSerialNumber, updateWarrantyDays,
-    setLineBatch, clearCart,
+    setLineBatch, updateColorSize, clearCart,
     subtotal, discount, setDiscount, total,
     splitPayments, setSplitPayments, collectedAmount, remainingAmount
   } = useBillingEngine(cartKey);
@@ -2056,7 +2056,16 @@ export default function WholesaleBillingUI() {
           product_id: (item as any).fromChallan ? null : (typeof item.id === 'string' && !item.id.includes('.') ? item.id : null),
           name: item.name,
           unit: item.unit,
-          variant: item.variant || null,
+          // A Single product (no formal variants) has no item.variant at
+          // all — but the salesman may still have hand-typed a colour/size
+          // note via the cart's editable chips. Without this fallback that
+          // note lived only in local cart state and never reached the
+          // server, so it never showed on the saved bill, print, or the
+          // Return screen — exactly what was reported. adjustVariantStores
+          // on the server already no-ops safely (just a warning) when a
+          // variant key doesn't match a real stock row, so this is safe to
+          // send even for a product that was never variant-tracked.
+          variant: item.variant || (item.color ? `${item.color} / ${item.size || ''}` : (item.size || null)),
           quantity: item.quantity,
           price_per_unit: item.price,
           purchase_price: item.cost || 0,
@@ -2684,6 +2693,89 @@ export default function WholesaleBillingUI() {
                         {subLineParts.length > 0 && (
                           <p className="text-[11px] text-slate-400 mt-0.5">{subLineParts.join(' · ')}</p>
                         )}
+                        {/* Editable Color/Size — same chips as Dukan/Vyapar's billing cart
+                            (page.tsx). Pre-fills from the product's formal variant when one
+                            was picked, but stays a free-text field either way — a Single
+                            product with no variants at all can still have the salesman note
+                            a colour/size by hand, and it prints on the bill either way. */}
+                        {bizConfig.hasSizes && !isMill && (() => {
+                          const prod = products.find((p: any) => p.id === item.id);
+                          let sv: any = prod?.size_variants ?? prod?.sizeVariants;
+                          if (typeof sv === 'string') { try { sv = JSON.parse(sv); } catch { sv = null; } }
+                          const svObj: Record<string, number> = (sv && typeof sv === 'object') ? sv : {};
+                          const isComposite = isColorSizeVariants(svObj);
+                          const availColors = isComposite ? colorsFromVariants(svObj) : [];
+                          const selectedColor = item.color || '';
+                          const availSizes = isComposite
+                            ? sizesFromVariants(svObj).filter(sz => {
+                                if (!selectedColor) return true;
+                                const key = `${selectedColor} / ${sz}`;
+                                return key in svObj;
+                              })
+                            : Object.keys(svObj);
+                          const stockForSize = (sz: string) => {
+                            const key = isComposite ? `${selectedColor} / ${sz}` : sz;
+                            return Number(svObj[key] ?? 0);
+                          };
+                          return (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <label className="inline-flex items-center gap-1 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-700 rounded-md px-1.5 py-0.5 shrink-0">
+                                  <span className="text-[10px] text-rose-400 dark:text-rose-300 font-medium whitespace-nowrap">Color</span>
+                                  <input
+                                    type="text"
+                                    placeholder="—"
+                                    value={item.color || ''}
+                                    onChange={e => updateColorSize(item.id, { color: e.target.value }, lineRef(item))}
+                                    className="bg-transparent outline-none text-[11px] w-14 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
+                                  />
+                                </label>
+                                {availColors.map(c => (
+                                  <button key={c} type="button"
+                                    onClick={() => updateColorSize(item.id, { color: c }, lineRef(item))}
+                                    className={cn('text-[10px] px-1.5 py-0.5 rounded border font-semibold transition-colors',
+                                      item.color === c
+                                        ? 'bg-rose-500 border-rose-500 text-white'
+                                        : 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-800/30'
+                                    )}>
+                                    {c}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <label className="inline-flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-md px-1.5 py-0.5 shrink-0">
+                                  <span className="text-[10px] text-indigo-400 dark:text-indigo-300 font-medium whitespace-nowrap">Size</span>
+                                  <input
+                                    type="text"
+                                    placeholder="—"
+                                    value={item.size || ''}
+                                    onChange={e => updateColorSize(item.id, { size: e.target.value }, lineRef(item))}
+                                    className="bg-transparent outline-none text-[11px] w-10 text-slate-700 dark:text-slate-300 min-w-0 font-medium"
+                                  />
+                                </label>
+                                {availSizes.map(sz => {
+                                  const stock = stockForSize(sz);
+                                  const inStock = stock > 0;
+                                  const isSelected = item.size === sz;
+                                  return (
+                                    <button key={sz} type="button"
+                                      onClick={() => updateColorSize(item.id, { size: sz }, lineRef(item))}
+                                      title={inStock ? `${sz}: ${stock} in stock` : `${sz}: out of stock`}
+                                      className={cn('text-[10px] px-1.5 py-0.5 rounded border font-bold transition-colors',
+                                        isSelected
+                                          ? 'bg-indigo-500 border-indigo-500 text-white'
+                                          : inStock
+                                          ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-800/30'
+                                          : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 line-through'
+                                      )}>
+                                      {sz}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {(() => {
                           const fields = categoryConfig.attributeSchema.billingDisplayFields;
                           const attrs = item.categoryAttributes as Record<string, string> | undefined;
