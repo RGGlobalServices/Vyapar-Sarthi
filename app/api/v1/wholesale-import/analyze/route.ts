@@ -866,7 +866,16 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       const msg = err instanceof Error ? err.message : String(err);
       return /\b401\b|\b403\b|unauthorized|unauthenticated|api key.*(expired|invalid|revoked)|invalid.*api.?key|permission.?denied/i.test(msg);
     };
-    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err) || isAuthError(err);
+    // Gemini's whole key×model matrix timed out without ever getting a real
+    // response (slow/unreachable from this server) — same class as quota:
+    // the request is fine, this provider just isn't answering in time.
+    // Previously this fell through none of the classifiers above, so a slow
+    // Gemini blocked OpenAI/Tesseract from ever being tried at all.
+    const isTimeoutError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /timed out|budget exhausted|ETIMEDOUT|ECONNRESET|ECONNREFUSED/i.test(msg);
+    };
+    const shouldFallback = (err: unknown) => isQuotaError(err) || isParseError(err) || isModelUnavailable(err) || isAuthError(err) || isTimeoutError(err);
 
     // ─── Zero-API OCR fallback (Tesseract) ───────────────────────────────
     // Terminal fallback when EVERY AI provider fails. tesseract.js is a
