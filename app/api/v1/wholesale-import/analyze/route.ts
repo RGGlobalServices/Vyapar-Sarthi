@@ -612,6 +612,15 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // budget makes the Gemini path fail fast and fall through to OpenAI /
     // Tesseract well inside any reasonable gateway timeout.
     const GEMINI_MATRIX_BUDGET_MS = Number(process.env.IMPORT_GEMINI_BUDGET_MS) || 20000;
+    // Per-attempt cap, separate from the matrix budget above. Real incident:
+    // attemptTimeoutMs below used to be capped ONLY by the matrix deadline, so
+    // on a fresh request that deadline is ~GEMINI_MATRIX_BUDGET_MS away and a
+    // single hanging first call was ALLOWED to wait that entire budget before
+    // timing out — leaving zero time to try any other key/model, which
+    // defeats the whole point of having several. Capping each attempt to a
+    // smaller slice means a hanging key/model gets skipped fast enough that
+    // the other configured keys actually get a turn within the same budget.
+    const GEMINI_ATTEMPT_TIMEOUT_MS = Number(process.env.IMPORT_GEMINI_ATTEMPT_MS) || 8000;
 
     // One Gemini generateContent invocation with per-attempt timeout, retry
     // on transient 429s (respecting the retryDelay hint), and automatic
@@ -625,7 +634,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         // Never let a single attempt's own timeout outlast what's left of the
         // overall matrix budget — otherwise one slow first call alone could
         // still burn the whole budget before any fallback is tried.
-        const attemptTimeoutMs = Math.max(1000, Math.min(importConfig.timeoutMs, matrixDeadline - Date.now()));
+        const attemptTimeoutMs = Math.max(1000, Math.min(importConfig.timeoutMs, GEMINI_ATTEMPT_TIMEOUT_MS, matrixDeadline - Date.now()));
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
