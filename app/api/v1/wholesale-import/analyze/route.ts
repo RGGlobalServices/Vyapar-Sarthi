@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -446,11 +447,28 @@ CRITICAL INSTRUCTIONS FOR AI:
         }
       } else if (mimeType.startsWith('image/')) {
         hasImages = true;
+        // Photographed bills are often tilted, shadowed, or far larger than a
+        // vision model needs — all three hurt OCR accuracy, and the oversized
+        // ones also waste tokens on pixels beyond what the model uses. Best-
+        // effort: a processing failure falls back to the original buffer
+        // rather than blocking the import (same pattern as the PDF tiers above).
+        let imgBuffer = buffer;
+        let imgMime = mimeType;
+        try {
+          imgBuffer = await sharp(buffer)
+            .rotate() // auto-orient from EXIF instead of trusting raw pixel orientation
+            .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+            .normalize() // stretch contrast — helps faded/shadowed prints
+            .sharpen()
+            .jpeg({ quality: 90 })
+            .toBuffer();
+          imgMime = 'image/jpeg';
+        } catch { /* keep the original buffer/mime */ }
         imageContents.push({
           type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${buffer.toString('base64')}` },
-          mimeType,
-          b64: buffer.toString('base64'),
+          image_url: { url: `data:${imgMime};base64,${imgBuffer.toString('base64')}` },
+          mimeType: imgMime,
+          b64: imgBuffer.toString('base64'),
         });
       } else if (mimeType === 'text/csv' || mimeType.includes('excel') || mimeType.includes('spreadsheet')) {
         try {
