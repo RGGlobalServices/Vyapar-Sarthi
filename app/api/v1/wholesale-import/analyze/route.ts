@@ -11,6 +11,23 @@ import { parseCharges, scanChargesFromText, mergeCharges, type PurchaseCharge } 
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 import { normalizeMillBill, mergeMillBills, reconcileBillLine, type MillBill } from '@/lib/millBill';
 
+// Module-level cache of depleted/invalid keys with 10-minute TTL to avoid burning request budgets on dead keys
+const depletedGeminiKeyCache = new Map<string, number>();
+
+function getActiveGeminiKeys(rawKeys: string[]): string[] {
+  const now = Date.now();
+  for (const [k, exp] of depletedGeminiKeyCache.entries()) {
+    if (now > exp) depletedGeminiKeyCache.delete(k);
+  }
+  const active = rawKeys.filter(k => !depletedGeminiKeyCache.has(k));
+  const depleted = rawKeys.filter(k => depletedGeminiKeyCache.has(k));
+  return [...active, ...depleted];
+}
+
+function markGeminiKeyDepleted(key: string) {
+  depletedGeminiKeyCache.set(key, Date.now() + 10 * 60 * 1000);
+}
+
 /* ─── Deterministic table reader ─────────────────────────────────────────────
  *
  * A machine-generated invoice/stock PDF already contains its table structure in
@@ -173,7 +190,7 @@ export async function POST(req: NextRequest) {
   // shared deadline means we always respond (success, partial result, or a
   // clean JSON timeout error) comfortably before that happens.
   const requestStartedAt = Date.now();
-  const OVERALL_DEADLINE_MS = Number(process.env.IMPORT_OVERALL_DEADLINE_MS) || 50000;
+  const OVERALL_DEADLINE_MS = Number(process.env.IMPORT_OVERALL_DEADLINE_MS) || 60000;
 
   try {
     const fd = await req.formData();
@@ -201,12 +218,13 @@ export async function POST(req: NextRequest) {
 
     // ── Gemini (primary) ─────────────────────────────────────────────────────
     // Multi-key support: rotate through GEMINI_API_KEY, GEMINI_API_KEY_2 … on quota exhaustion.
-    const geminiKeys = [
+    const rawGeminiKeys = [
       process.env.GEMINI_API_KEY,
       process.env.GEMINI_API_KEY_2,
       process.env.GEMINI_API_KEY_3,
       process.env.GEMINI_API_KEY_4,
     ].filter(Boolean) as string[];
+    const geminiKeys = getActiveGeminiKeys(rawGeminiKeys);
     const geminiKey = geminiKeys[0] || '';
 
     if (!openaiKey && !geminiKey) {
@@ -599,7 +617,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // hard-code deprecated 1.5/2.0 IDs. Add newer 3.x models to the front
     // of the env chain to opt in.
     const geminiChain = (process.env.IMPORT_GEMINI_MODELS || process.env.IMPORT_GEMINI_MODEL
-      || 'gemini-3.5-flash,gemini-3.5-flash-lite')
+      || 'gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemini-3.8-flash')
       .split(',').map(s => s.trim()).filter(Boolean);
 
     // Hard wall-clock ceiling on the ENTIRE key×model×retry matrix below, not
@@ -611,7 +629,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // app itself never got the chance to reply — nginx gave up first). This
     // budget makes the Gemini path fail fast and fall through to OpenAI /
     // Tesseract well inside any reasonable gateway timeout.
-    const GEMINI_MATRIX_BUDGET_MS = Number(process.env.IMPORT_GEMINI_BUDGET_MS) || 20000;
+    const GEMINI_MATRIX_BUDGET_MS = Number(process.env.IMPORT_GEMINI_BUDGET_MS) || 35000;
     // Per-attempt cap, separate from the matrix budget above. Real incident:
     // attemptTimeoutMs below used to be capped ONLY by the matrix deadline, so
     // on a fresh request that deadline is ~GEMINI_MATRIX_BUDGET_MS away and a
@@ -620,7 +638,7 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
     // defeats the whole point of having several. Capping each attempt to a
     // smaller slice means a hanging key/model gets skipped fast enough that
     // the other configured keys actually get a turn within the same budget.
-    const GEMINI_ATTEMPT_TIMEOUT_MS = Number(process.env.IMPORT_GEMINI_ATTEMPT_MS) || 8000;
+    const GEMINI_ATTEMPT_TIMEOUT_MS = Number(process.env.IMPORT_GEMINI_ATTEMPT_MS) || 0;
 
     // One Gemini generateContent invocation with per-attempt timeout, retry
     // on transient 429s (respecting the retryDelay hint), and automatic
@@ -634,7 +652,8 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
         // Never let a single attempt's own timeout outlast what's left of the
         // overall matrix budget — otherwise one slow first call alone could
         // still burn the whole budget before any fallback is tried.
-        const attemptTimeoutMs = Math.max(1000, Math.min(importConfig.timeoutMs, GEMINI_ATTEMPT_TIMEOUT_MS, matrixDeadline - Date.now()));
+        const attemptTimeoutCap = GEMINI_ATTEMPT_TIMEOUT_MS || (kind === 'vision' || kind === 'pdf' ? 18000 : 12000);
+        const attemptTimeoutMs = Math.max(1000, Math.min(importConfig.timeoutMs, attemptTimeoutCap, matrixDeadline - Date.now()));
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
@@ -667,10 +686,11 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
       // to the next key. Non-quota errors short-circuit immediately.
       outer:
       for (const client of geminiClients) {
+        const clientKey = geminiKeys[geminiClients.indexOf(client)];
         let anyModelQuotaExhausted = false;
         for (const model of geminiChain) {
           let escalate = false;
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 2; i++) {
             if (Date.now() >= matrixDeadline) {
               lastErrors.push(`budget exhausted (${GEMINI_MATRIX_BUDGET_MS}ms) before trying every key/model`);
               break outer;
@@ -678,30 +698,31 @@ REMEMBER: Respond with ONLY a JSON object like the example above. Start with { a
             try { return await attempt(client, model); }
             catch (e: any) {
               const msg = e?.message || String(e);
+              // Key-level depletion (402 credits depleted / 401 invalid or expired) applies to the WHOLE key.
+              // Trying other models on this key will never succeed and only wastes budget, so skip immediately.
+              const isKeyLevel = /\b402\b|prepayment|credits are depleted|\b401\b|\b403\b|api key.*(expired|invalid|revoked)|invalid.*api.?key/i.test(msg);
+              if (isKeyLevel) {
+                if (clientKey) markGeminiKeyDepleted(clientKey);
+                lastErrors.push(`key${geminiClients.indexOf(client) + 1} depleted: ${msg.slice(0, 180)}`);
+                continue outer;
+              }
               const wait = parseRetryDelayMs(e);
-              // Transient 429 with retryDelay hint: honour it and retry same model —
-              // but never past the overall budget, or a generous retryDelay hint
-              // (these can be 20s+) could alone exceed it.
-              if (wait !== null && i < 2 && !/limit:\s*0|PerDay/i.test(msg) && Date.now() + wait < matrixDeadline) {
+              if (wait !== null && i < 1 && !/limit:\s*0|PerDay/i.test(msg) && Date.now() + wait < matrixDeadline) {
                 await sleep(wait);
                 continue;
               }
-              // Transient overload: 2s → 4s → 8s, then escalate to next model.
-              if (isTransientUnavailable(e) && i < 2 && Date.now() + 2000 * Math.pow(2, i) < matrixDeadline) {
-                await sleep(2000 * Math.pow(2, i));
+              if (isTransientUnavailable(e) && i < 1 && Date.now() + 1000 < matrixDeadline) {
+                await sleep(1000);
                 continue;
               }
               lastErrors.push(`key${geminiClients.indexOf(client) + 1}/${model}: ${msg.slice(0, 180)}`);
 
-              // Always escalate to the next model/key on ANY failure
-              // (quota, invalid key, timeout, bad request) to ensure maximum robustness.
               escalate = true;
               anyModelQuotaExhausted = true;
               break;
             }
           }
         }
-        // Move to the next key if this key had ANY failure on its models
         if (!anyModelQuotaExhausted) break;
       }
       throw new Error(`Gemini ${kind} call failed (all keys × models exhausted): ${lastErrors.join(' | ')}`);
