@@ -295,6 +295,7 @@
     "mixPaymentBreakdown": "Enter amount for each method",
     "mixAllSet": "✓ All set",
     "mixRemaining": "₹{n} remaining",
+    "mixToUdhar": "₹{n} → Udhar",
     "mixOver": "₹{n} over",
     "mixTotal": "Total: ₹{n}",
     "mixCash": "💵 Cash",

@@ -214,8 +214,11 @@ export const POST = handle(async (req) => {
     }
     if (difference > 0 && mix_payment) {
       const mixTotal = Math.round(((Number(mix_payment.cash) || 0) + (Number(mix_payment.upi) || 0) + (Number(mix_payment.card) || 0)) * 100) / 100;
-      if (Math.abs(mixTotal - difference) > 0.5) {
-        throw new ApiError(400, `Mix payment total ₹${mixTotal} does not match the difference ₹${difference}`);
+      if (mixTotal <= 0) throw new ApiError(400, 'Mix payment amounts must total more than 0');
+      if (mixTotal > difference + 0.5) throw new ApiError(400, `Mix payment ₹${mixTotal} exceeds the difference ₹${difference}`);
+      // shortfall goes to udhar — needs a linked customer
+      if (mixTotal < difference - 0.5 && !saleRow.customer_id) {
+        throw new ApiError(400, 'This bill has no linked customer — cannot add the remaining balance to udhar');
       }
     }
 
@@ -275,7 +278,9 @@ export const POST = handle(async (req) => {
       exchangeAmountPaid = returnValue;
       exchangePaymentType = 'Udhar';
     } else if (mix_payment) {
-      exchangeAmountPaid = exchangeValue;
+      const mixTotal = round2((Number(mix_payment.cash) || 0) + (Number(mix_payment.upi) || 0) + (Number(mix_payment.card) || 0));
+      // only what was actually collected; shortfall (difference - mixTotal) stays as udhar
+      exchangeAmountPaid = round2(returnValue + mixTotal);
       exchangePaymentType = 'Mix';
       exchangePaymentDetails = {
         cash: Number(mix_payment.cash) || 0,
@@ -464,7 +469,9 @@ export const POST = handle(async (req) => {
       if (difference > 0 && settlement_method === 'Udhar') {
         udharAdded = difference;
       } else if (difference > 0 && mix_payment) {
+        const mixTotal = round2((Number(mix_payment.cash) || 0) + (Number(mix_payment.upi) || 0) + (Number(mix_payment.card) || 0));
         cashCollected = Number(mix_payment.cash) || 0;
+        udharAdded = round2(difference - mixTotal); // shortfall from partial mix goes to Udhar
       } else if (difference > 0) {
         cashCollected = settlement_method === 'Cash' ? difference : 0;
       }

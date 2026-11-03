@@ -295,6 +295,7 @@
     "mixPaymentBreakdown": "प्रत्येक पद्धतीसाठी रक्कम प्रविष्ट करा",
     "mixAllSet": "✓ तयार",
     "mixRemaining": "₹{n} शिल्लक",
+    "mixToUdhar": "₹{n} → उधार",
     "mixOver": "₹{n} जास्त",
     "mixTotal": "एकूण: ₹{n}",
     "mixCash": "💵 रोख",

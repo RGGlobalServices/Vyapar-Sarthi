@@ -500,14 +500,15 @@ export default function ReturnsPage() {
 
     if (exchangeDifference > 0 && settlementMethod === 'Mix') {
       const mixTotal = Math.round((mixAmounts.cash + mixAmounts.upi + mixAmounts.card) * 100) / 100;
-      if (Math.abs(mixTotal - exchangeDifference) > 0.5) {
-        alert(`Mix payment total ₹${mixTotal.toLocaleString('en-IN')} must equal the difference ₹${exchangeDifference.toLocaleString('en-IN')}`);
-        return;
-      }
       if (mixTotal <= 0) {
         alert('Please enter payment amounts for Mix payment');
         return;
       }
+      if (mixTotal > exchangeDifference + 0.5) {
+        alert(`Mix payment total ₹${mixTotal.toLocaleString('en-IN')} cannot exceed the difference ₹${exchangeDifference.toLocaleString('en-IN')}`);
+        return;
+      }
+      // shortfall (exchangeDifference - mixTotal) goes to Udhar — allowed
     }
 
     setSubmitting(true);
@@ -1187,7 +1188,7 @@ export default function ReturnsPage() {
                                 const remaining = Math.round((exchangeDifference - mixTotal) * 100) / 100;
                                 return (
                                   <div className={cn('flex justify-between text-xs font-bold pt-1 border-t border-indigo-200 dark:border-indigo-800', remaining === 0 ? 'text-emerald-600 dark:text-emerald-400' : remaining > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400')}>
-                                    <span>{remaining === 0 ? (t('mixAllSet') || '✓ All set') : remaining > 0 ? (t('mixRemaining', { n: remaining.toLocaleString('en-IN') }) || `₹${remaining.toLocaleString('en-IN')} remaining`) : (t('mixOver', { n: Math.abs(remaining).toLocaleString('en-IN') }) || `₹${Math.abs(remaining).toLocaleString('en-IN')} over`)}</span>
+                                    <span>{remaining === 0 ? (t('mixAllSet') || '✓ All set') : remaining > 0 ? (t('mixToUdhar', { n: remaining.toLocaleString('en-IN') }) || `₹${remaining.toLocaleString('en-IN')} → Udhar`) : (t('mixOver', { n: Math.abs(remaining).toLocaleString('en-IN') }) || `₹${Math.abs(remaining).toLocaleString('en-IN')} over`)}</span>
                                     <span>{t('mixTotal', { n: mixTotal.toLocaleString('en-IN') }) || `Total: ₹${mixTotal.toLocaleString('en-IN')}`}</span>
                                   </div>
                                 );
