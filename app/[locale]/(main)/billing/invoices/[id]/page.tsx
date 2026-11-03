@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link, useRouter } from '@/i18n/routing';
 import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 import { isMillInvoice } from '@/lib/millInvoice';
-import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download } from 'lucide-react';
+import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download, ArrowRightLeft } from 'lucide-react';
 import { cn, fmtDate } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
@@ -234,15 +234,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     isEmi: invoice.payment_type === 'EMI',
   };
 
+  const paymentStatusLabel = billData.remainingAmount <= 0 ? t('paidStatus') : billData.amountPaid > 0 ? t('partiallyPaidStatus') : t('creditUdharStatus');
+  const paymentStatusColor = billData.remainingAmount <= 0 ? 'text-emerald-500' : billData.amountPaid > 0 ? 'text-amber-500' : 'text-orange-500';
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 relative">
+    <div className="max-w-5xl mx-auto space-y-5 animate-in fade-in duration-500 pb-20 relative">
       {/* ── PRINT-ONLY CONTAINER ── */}
       <div id="print-area" className="hidden print:block print:absolute print:inset-0 print:z-[9999] bg-white">
         <BillSlip {...billData} />
       </div>
 
       {/* ── SCREEN-ONLY UI ── */}
-      <div className="print:hidden space-y-8">
+      <div className="print:hidden space-y-5">
         {/* Hidden element for PDF generation capture */}
         <div className="hidden">
           <div ref={componentRef} className="bg-white">
@@ -250,282 +253,332 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
 
-        {/* Breadcrumbs & Header */}
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
-            <Link href="/" className="hover:text-emerald-500 transition-colors">{t('dashboard')}</Link>
-            <ChevronRight size={10} />
-            <Link href="/billing/invoices" className="hover:text-emerald-500 transition-colors">{t('invoicesBreadcrumb')}</Link>
-            <ChevronRight size={10} />
-            <span className="text-slate-400">INV-{invoice.id.substring(0, 8)}</span>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-5">
-              <Link href="/billing/invoices" className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm">
-                <ArrowLeft size={24} />
-              </Link>
-              <div>
-                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-3 flex-wrap">
-                  INV-{invoice.id.substring(0, 8).toUpperCase()}
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-600">
+          <Link href="/" className="hover:text-emerald-500 transition-colors">{t('dashboard')}</Link>
+          <ChevronRight size={10} />
+          <Link href="/billing/invoices" className="hover:text-emerald-500 transition-colors">{t('invoicesBreadcrumb')}</Link>
+          <ChevronRight size={10} />
+          <span className="text-slate-400">INV-{invoice.id.substring(0, 8)}</span>
+        </div>
+
+        {/* ① Hero strip */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <CardContent className="p-5 flex flex-col md:flex-row md:items-center gap-4">
+            <Link href="/billing/invoices" className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all self-start shrink-0">
+              <ArrowLeft size={20} />
+            </Link>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mb-2">
+                INV-{invoice.id.substring(0, 8).toUpperCase()}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn(
+                  "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
+                  invoice.payment_type === 'Cash' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                  invoice.payment_type === 'UPI' ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
+                  "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                )}>
+                  {invoice.payment_type}
+                </span>
+                <span className={cn(
+                  "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
+                  billData.billType === 'gst'
+                    ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20"
+                    : "bg-slate-500/10 text-slate-500 border-slate-500/20"
+                )}>
+                  {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
+                </span>
+                {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
                   <span className={cn(
                     "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
-                    invoice.payment_type === 'Cash' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                    invoice.payment_type === 'UPI' ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
-                    "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                    pricingMode === 'wholesale'
+                      ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
+                      : "bg-teal-500/10 text-teal-500 border-teal-500/20"
                   )}>
-                    {invoice.payment_type}
+                    {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
                   </span>
-                  {/* GST / Non-GST — every invoice, every package, so it's never
-                      ambiguous from the record alone which kind of bill this was. */}
-                  <span className={cn(
-                    "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
-                    billData.billType === 'gst'
-                      ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20"
-                      : "bg-slate-500/10 text-slate-500 border-slate-500/20"
-                  )}>
-                    {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
-                  </span>
-                  {/* Wholesale / Retail — Udyog & Bada Udyog only, where the
-                      billing screen actually offers that toggle. No badge at
-                      all when pricingMode wasn't recorded (bills saved before
-                      this field existed) rather than guessing wrong. */}
-                  {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
-                    <span className={cn(
-                      "text-[10px] font-black px-3 py-1 rounded-full border uppercase tracking-wider",
-                      pricingMode === 'wholesale'
-                        ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
-                        : "bg-teal-500/10 text-teal-500 border-teal-500/20"
-                    )}>
-                      {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
-                    </span>
-                  )}
-                </h1>
-                <p className="text-slate-500 text-sm font-medium mt-1">{t('recordCreatedOn', { date: new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}</p>
+                )}
+                <span className="text-[11px] text-slate-400 font-medium">
+                  {new Date(invoice.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
               </div>
             </div>
-            <button 
-              onClick={handlePrint}
-              className="hidden md:flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all shadow-sm"
-            >
-              <Printer size={18} /> {t('printRecord')}
-            </button>
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('grandTotal')}</p>
+                <p className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{totalAmount.toLocaleString('en-IN')}</p>
+              </div>
+              <button
+                onClick={handlePrint}
+                className="hidden md:flex items-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-5 py-3 rounded-2xl font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all"
+              >
+                <Printer size={18} /> {t('printRecord')}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ② Quick stats */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+              <Package size={11} /> {t('totalItems')}
+            </p>
+            <p className="text-2xl font-black text-slate-900 dark:text-white">{items.length}</p>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+              <User size={11} /> {t('customer')}
+            </p>
+            <p className="text-lg font-black text-slate-900 dark:text-white truncate">{invoice.customer_name || '—'}</p>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+              <CreditCard size={11} /> {t('paymentStatus')}
+            </p>
+            <p className={cn("text-lg font-black uppercase tracking-wide", paymentStatusColor)}>{paymentStatusLabel}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Left Column: Items */}
-          <div className="md:col-span-2 space-y-6 min-w-0">
-            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-              <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-6">
-                <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2 uppercase tracking-widest">
-                  <Package size={16} className="text-emerald-500" /> {t('purchasedItems')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto w-full">
-                <table className="w-full text-left min-w-[500px]">
-                  <thead className="bg-slate-100 dark:bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
-                    <tr>
-                      <th className="px-6 py-4">{t('colProductName')}</th>
-                      <th className="px-6 py-4 text-center">{t('colHsn')}</th>
-                      <th className="px-6 py-4 text-center">{t('colQty')}</th>
-                      <th className="px-6 py-4 text-right">{t('colPrice')}</th>
-                      <th className="px-6 py-4 text-right">{t('colGstPercent')}</th>
-                      <th className="px-6 py-4 text-right">{t('colTotal')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
-                    {items.map((item: any) => (
-                      <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="font-bold">{item.name}</div>
-                          {(item.color || item.size || item.variant) && (
-                            <div className="text-[10px] text-slate-500 font-semibold">
-                              {[item.color, item.size].filter(Boolean).join(' / ') || item.variant}
-                            </div>
-                          )}
-                          <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
-                        </td>
-                        <td className="px-6 py-4 text-center text-slate-500 font-medium">{item.hsnCode || '-'}</td>
-                        <td className="px-6 py-4 text-center font-black">{item.quantity}</td>
-                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{(Number(item.price_per_unit) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">{item.gstPercent ? `${item.gstPercent}%` : '-'}</td>
-                        <td className="px-6 py-4 text-right font-black">₹{(Number(item.total) || 0).toLocaleString('en-IN')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
+        {/* ③ Items table — full width */}
+        <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+          <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-5">
+            <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2 uppercase tracking-widest">
+              <Package size={15} className="text-emerald-500" /> {t('purchasedItems')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto w-full">
+            <table className="w-full text-left min-w-[500px]">
+              <thead className="bg-slate-100 dark:bg-slate-800/30 text-slate-500 text-[10px] font-black uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-6 py-4">{t('colProductName')}</th>
+                  <th className="px-6 py-4 text-center">{t('colHsn')}</th>
+                  <th className="px-6 py-4 text-center">{t('colQty')}</th>
+                  <th className="px-6 py-4 text-right">{t('colPrice')}</th>
+                  <th className="px-6 py-4 text-right">{t('colGstPercent')}</th>
+                  <th className="px-6 py-4 text-right">{t('colTotal')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
+                {items.map((item: any) => (
+                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="font-bold">{item.name}</div>
+                      {(item.color || item.size || item.variant) && (
+                        <div className="text-[10px] text-slate-500 font-semibold">
+                          {[item.color, item.size].filter(Boolean).join(' / ') || item.variant}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
+                    </td>
+                    <td className="px-6 py-4 text-center text-slate-500 font-medium">{item.hsnCode || '-'}</td>
+                    <td className="px-6 py-4 text-center font-black">{item.quantity}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{(Number(item.price_per_unit) || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">{item.gstPercent ? `${item.gstPercent}%` : '-'}</td>
+                    <td className="px-6 py-4 text-right font-black">₹{(Number(item.total) || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
 
-          {/* Right Column: Summary & Info */}
-          <div className="space-y-6">
-            {/* Summary Card */}
-            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl border-b-4 border-b-emerald-500/20 dark:border-b-emerald-500/20">
-              <CardHeader className="bg-emerald-500/5 border-b border-emerald-500/10 p-6">
-                <CardTitle className="text-sm font-bold text-emerald-500 flex items-center gap-2 uppercase tracking-widest">
-                  {t('billSummary')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 font-medium tracking-tight">{t('totalItems')}</span>
-                  <span className="text-slate-900 dark:text-slate-100 font-bold">{items.length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 font-medium tracking-tight">{t('billType')}</span>
-                  <span className={cn(
-                    "font-bold uppercase tracking-wider text-xs",
-                    billData.billType === 'gst' ? "text-indigo-500" : "text-slate-500"
-                  )}>
-                    {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
-                  </span>
-                </div>
-                {/* Wholesale / Retail — only meaningful for Udyog & Bada Udyog,
-                    and only when pricingMode was actually recorded (bills
-                    saved before this field existed show nothing, not a guess). */}
-                {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-medium tracking-tight">{t('pricingType')}</span>
-                    <span className={cn(
-                      "font-bold uppercase tracking-wider text-xs",
-                      pricingMode === 'wholesale' ? "text-purple-500" : "text-teal-500"
-                    )}>
-                      {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
+        {/* Exchange / Returns section — full width, below table */}
+        {Array.isArray(invoice.returns) && invoice.returns.length > 0 && (
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <CardHeader className="bg-amber-500/5 border-b border-amber-500/10 p-5">
+              <CardTitle className="text-sm font-bold text-amber-500 flex items-center gap-2 uppercase tracking-widest">
+                <ArrowRightLeft size={15} /> {t('exchangeSection')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4">
+              {invoice.returns.map((r: any, i: number) => (
+                <div key={i} className="border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500 font-medium">{t('returnedItem')}</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                      {r.itemName} × {r.quantity} — ₹{Number(r.amount).toLocaleString('en-IN')}
                     </span>
                   </div>
-                )}
-                {discountAmount > 0 && (
-                  <>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 font-medium tracking-tight">{t('subtotal')}</span>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{(totalAmount + discountAmount).toLocaleString('en-IN')}</span>
+                  {r.exchange && r.exchangeInvoiceNumber && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500 font-medium">{t('exchangeInvoiceLabel')}</span>
+                      <span className="font-black text-amber-600 dark:text-amber-400 tracking-wide">{r.exchangeInvoiceNumber}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 font-medium tracking-tight">{t('discountApplied')}</span>
-                      <span className="text-orange-500 font-bold">− ₹{discountAmount.toLocaleString('en-IN')}</span>
-                    </div>
-                  </>
-                )}
-                {gstAmount > 0 && (
-                  <>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 font-medium tracking-tight">{t('taxableValue')}</span>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{Math.max(0, totalAmount - gstAmount - chargesTotal).toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 font-medium tracking-tight">{t('gstAmount')}</span>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold">₹{gstAmount.toLocaleString('en-IN')}</span>
-                    </div>
-                  </>
-                )}
-                {chargesTotal > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-medium tracking-tight">{t('chargesTotal')}</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{chargesTotal.toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                {roundOffAmount !== 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-medium tracking-tight">{t('roundOff')}</span>
-                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{roundOffAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500 font-medium tracking-tight">{t('paymentStatus')}</span>
-                  <span className={cn(
-                    "font-bold uppercase tracking-wider text-xs",
-                    billData.remainingAmount <= 0 ? "text-emerald-500" : billData.amountPaid > 0 ? "text-amber-500" : "text-orange-500"
-                  )}>
-                    {billData.remainingAmount <= 0 ? t('paidStatus') : billData.amountPaid > 0 ? t('partiallyPaidStatus') : t('creditUdharStatus')}
-                  </span>
-                </div>
-                <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-end">
-                  <span className="text-sm font-bold text-slate-400 uppercase tracking-widest pb-1">{t('grandTotal')}</span>
-                  <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{totalAmount.toLocaleString('en-IN')}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Original Bill (manual uploads only) */}
-            {invoice.is_manual && invoice.bill_image_url && (
-              <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-                <CardHeader className="bg-amber-500/5 border-b border-amber-500/10 p-6">
-                  <CardTitle className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 uppercase tracking-widest">
-                    {t('originalBill')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4">
-                  {/\.pdf(\?|$)/i.test(invoice.bill_image_url) ? (
-                    <a
-                      href={invoice.bill_image_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 py-6 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold text-sm border border-dashed border-slate-200 dark:border-slate-700 rounded-xl transition-colors"
-                    >
-                      {t('viewUploadedPdf')}
-                    </a>
-                  ) : (
-                    <a href={invoice.bill_image_url} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={invoice.bill_image_url}
-                        alt="Uploaded bill"
-                        className="w-full rounded-xl border border-slate-200 dark:border-slate-800 object-contain max-h-80"
-                      />
-                    </a>
                   )}
-                </CardContent>
-              </Card>
-            )}
+                  {r.exchange && Array.isArray(r.exchangedFor) && r.exchangedFor.length > 0 && (
+                    <div>
+                      <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">{t('exchangedForLabel')}</p>
+                      <div className="space-y-1">
+                        {r.exchangedFor.map((e: any, j: number) => (
+                          <div key={j} className="flex items-center justify-between text-sm bg-slate-50 dark:bg-slate-800/50 rounded-xl px-3 py-2">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{e.name}{e.variant ? ` (${e.variant})` : ''}</span>
+                            <span className="text-slate-500 font-medium">{e.quantity} × ₹{Number(e.price).toLocaleString('en-IN')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
-            {/* Customer Info Card */}
-            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-              <CardContent className="p-6 space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
-                    <User size={20} />
+        {/* ④ Bottom 3-col: Bill summary | Customer | Payment + Download */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Bill summary */}
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <CardHeader className="bg-emerald-500/5 border-b border-emerald-500/10 p-5">
+              <CardTitle className="text-sm font-bold text-emerald-500 flex items-center gap-2 uppercase tracking-widest">
+                {t('billSummary')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-3">
+              {discountAmount > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">{t('subtotal')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{(totalAmount + discountAmount).toLocaleString('en-IN')}</span>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('customer')}</p>
-                    <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.customer_name}</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">{t('discountApplied')}</span>
+                    <span className="text-orange-500 font-bold">− ₹{discountAmount.toLocaleString('en-IN')}</span>
                   </div>
+                </>
+              )}
+              {gstAmount > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">{t('taxableValue')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{Math.max(0, totalAmount - gstAmount - chargesTotal).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">{t('gstAmount')}</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">₹{gstAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </>
+              )}
+              {chargesTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500 font-medium">{t('chargesTotal')}</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">₹{chargesTotal.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
-                    <CreditCard size={20} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('paymentMode')}</p>
-                    <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.payment_type}</p>
-                  </div>
+              )}
+              {roundOffAmount !== 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500 font-medium">{t('roundOff')}</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">₹{roundOffAmount.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500">
-                    <Calendar size={20} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('date')}</p>
-                    <p className="text-slate-900 dark:text-slate-100 font-bold">{fmtDate(invoice.created_at)}</p>
-                  </div>
+              )}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t('grandTotal')}</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-white">₹{totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Customer info */}
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-5">
+              <CardTitle className="text-sm font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                <User size={14} /> {t('customer')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('customer')}</p>
+                <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.customer_name || '—'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('billType')}</p>
+                <p className={cn("font-bold uppercase tracking-wide text-sm", billData.billType === 'gst' ? "text-indigo-500" : "text-slate-500")}>
+                  {billData.billType === 'gst' ? t('gstInvoiceBadge') : t('nonGstInvoiceBadge')}
+                </p>
+              </div>
+              {(isWholesaleTierPackage(profile?.subscriptionPlan) || isWholesaleTierPackage(profile?.packageType)) && pricingMode && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('pricingType')}</p>
+                  <p className={cn("font-bold uppercase tracking-wide text-sm", pricingMode === 'wholesale' ? "text-purple-500" : "text-teal-500")}>
+                    {pricingMode === 'wholesale' ? t('wholesaleSaleBadge') : t('retailSaleBadge')}
+                  </p>
                 </div>
+              )}
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('date')}</p>
+                <p className="text-slate-900 dark:text-slate-100 font-bold">{fmtDate(invoice.created_at)}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Payment + Download */}
+          <div className="space-y-4">
+            <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+              <CardHeader className="bg-slate-50 dark:bg-slate-800/20 border-b border-slate-200 dark:border-slate-800 p-5">
+                <CardTitle className="text-sm font-bold text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                  <CreditCard size={14} /> {t('paymentMode')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('paymentMode')}</p>
+                  <p className="text-slate-900 dark:text-slate-100 font-bold">{invoice.payment_type}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('paymentStatus')}</p>
+                  <p className={cn("font-black uppercase tracking-wide text-sm", paymentStatusColor)}>{paymentStatusLabel}</p>
+                </div>
+                {billData.amountPaid > 0 && billData.remainingAmount > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('remainingAmount') || 'Remaining'}</p>
+                    <p className="text-orange-500 font-black">₹{billData.remainingAmount.toLocaleString('en-IN')}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            <button 
+            <button
               onClick={handleDownloadPDF}
               disabled={downloading}
               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-2xl font-bold transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
             >
-              {downloading ? (
-                <RefreshCw size={18} className="animate-spin" />
-              ) : (
-                <Download size={18} />
-              )}
+              {downloading ? <RefreshCw size={18} className="animate-spin" /> : <Download size={18} />}
               {t('downloadPdfReceipt')}
             </button>
           </div>
         </div>
+
+        {/* Original Bill (manual uploads only) */}
+        {invoice.is_manual && invoice.bill_image_url && (
+          <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <CardHeader className="bg-amber-500/5 border-b border-amber-500/10 p-5">
+              <CardTitle className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 uppercase tracking-widest">
+                {t('originalBill')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              {/\.pdf(\?|$)/i.test(invoice.bill_image_url) ? (
+                <a
+                  href={invoice.bill_image_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-6 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 font-semibold text-sm border border-dashed border-slate-200 dark:border-slate-700 rounded-xl transition-colors"
+                >
+                  {t('viewUploadedPdf')}
+                </a>
+              ) : (
+                <a href={invoice.bill_image_url} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={invoice.bill_image_url}
+                    alt="Uploaded bill"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 object-contain max-h-80"
+                  />
+                </a>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

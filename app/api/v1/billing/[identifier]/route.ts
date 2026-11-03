@@ -61,7 +61,7 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     getReturnedQuantitiesForSale(prisma, shopId, sale.id),
     prisma.materialReturn.findMany({
       where: { shopId, note: { contains: sale.id } },
-      select: { amount: true, note: true },
+      select: { amount: true, note: true, itemName: true, quantity: true },
     }),
   ]);
 
@@ -135,6 +135,13 @@ export const GET = handle<Ctx>(async (req, { params }) => {
     } : {}),
     created_at: sale.createdAt,
     discount_factor: discountFactor,
+    returns: priorReturnRows.flatMap((r) => {
+      try {
+        const n = JSON.parse(r.note || '{}');
+        if (n.billId !== sale.id || n.settled !== true) return [];
+        return [{ itemName: r.itemName, quantity: r.quantity, amount: Number(r.amount), exchange: n.exchange || false, exchangeInvoiceNumber: n.exchangeInvoiceNumber || null, exchangeSaleId: n.exchangeSaleId || null, exchangedFor: n.exchangedFor || null }];
+      } catch { return []; }
+    }),
     items: sale.items.map((item) => {
       const returnedQty = returnedQuantities[item.id] || returnedQuantities[item.productId || ''] || returnedQuantities[item.product?.name || ''] || 0;
       const ppu = Number(item.pricePerUnit) || 0;

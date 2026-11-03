@@ -1245,13 +1245,13 @@ function SettingsPageInner() {
                   <div key={plan.key} className={cn('relative rounded-2xl border p-5 flex flex-col gap-4', c.bg, isCurrent ? (isPaid ? 'border-emerald-500/50' : 'border-amber-500/50') : c.border)}>
                     {plan.popular && !isCurrent && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <span className="bg-indigo-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg">{t('mostPopular')}</span>
+                        <span className="bg-indigo-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg whitespace-nowrap">{t('mostPopular')}</span>
                       </div>
                     )}
                     {isCurrent && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                         <span className={cn(
-                          'text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg',
+                          'text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-lg whitespace-nowrap',
                           isPaid ? 'bg-emerald-500 text-slate-900' : 'bg-amber-500 text-slate-900',
                         )}>
                           {isPaid ? t('currentPlan') : t('currentOnTrial')}

@@ -165,8 +165,8 @@ export default function Sidebar({
   const [pendingOfflineBills, setPendingOfflineBills] = useState(0);
 
   const [mounted, setMounted] = useState(false);
-  const { theme, setTheme } = useTheme();
-  const isDark = theme === 'dark';
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const upcomingEventsCount = useNotificationStore(s => s.upcomingEventsCount);
   // Per-section collapse state for the Bada Udyog grouped sidebar. Persisted
   // in localStorage so a shopkeeper's open/closed choices survive reloads.

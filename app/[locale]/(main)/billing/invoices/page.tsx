@@ -1128,14 +1128,7 @@ export default function InvoiceHistoryPage() {
                           >
                             <Copy size={13} />
                           </button>
-                          <button
-                            onClick={() => setReturnInvoice(inv)}
-                            title={t('returnRefund')}
-                            data-testid="inv-action-return"
-                            className="w-7 h-7 flex items-center justify-center bg-slate-100 dark:bg-slate-800 hover:bg-orange-500 text-slate-500 hover:text-white dark:hover:text-slate-900 rounded-lg transition-all"
-                          >
-                            <RotateCcw size={13} />
-                          </button>
+
                           <button
                             onClick={() => (inv as any).pricing_model === 'mill_v2' ? alert(tMill('actionsBlockedMill')) : setEditInvoice(inv)}
                             title={(inv as any).pricing_model === 'mill_v2' ? tMill('actionsBlockedMill') : (t('editBillTooltip') || 'Edit Bill')}
