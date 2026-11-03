@@ -137,6 +137,9 @@ export default function PurchasesPage() {
   const [convertingRaw, setConvertingRaw] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleteReverseStock, setDeleteReverseStock] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
 
   // List search / filter
@@ -550,6 +553,20 @@ export default function PurchasesPage() {
       alert(err?.response?.data?.error || err.message || 'Failed to delete purchase.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      await Promise.all([...selectedIds].map(id => api.delete(`/purchases/${id}`, { data: { reverseStock: deleteReverseStock } })));
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      mutateInvoices();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || err.message || 'Failed to delete some purchases.');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -1372,10 +1389,36 @@ export default function PurchasesPage() {
         </div>
       ) : (
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm">
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 px-5 py-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800">
+              <span className="text-sm font-bold text-red-700 dark:text-red-400">{selectedIds.size} selected</span>
+              <button
+                onClick={() => { setDeleteReverseStock(true); setShowBulkDeleteConfirm(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-colors"
+              >
+                <Trash2 size={13} /> Delete Selected
+              </button>
+              <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 ml-auto">
+                Clear selection
+              </button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
               <thead className="text-xs uppercase bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
                 <tr>
+                  <th className="pl-5 pr-2 py-4 w-8">
+                    <input
+                      type="checkbox"
+                      checked={invoices.length > 0 && invoices.every(inv => selectedIds.has(inv.id))}
+                      ref={el => { if (el) el.indeterminate = invoices.some(inv => selectedIds.has(inv.id)) && !invoices.every(inv => selectedIds.has(inv.id)); }}
+                      onChange={() => {
+                        const allSel = invoices.every(inv => selectedIds.has(inv.id));
+                        setSelectedIds(allSel ? new Set() : new Set(invoices.map(inv => inv.id)));
+                      }}
+                      className="w-4 h-4 accent-red-600 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-5 py-4 font-medium">{t('dateLabel') || 'Date'}</th>
                   <th className="px-5 py-4 font-medium">{t('invoiceHash') || 'Invoice #'}</th>
                   <th className="px-5 py-4 font-medium">{t('colSupplier') || 'Supplier'}</th>
@@ -1397,7 +1440,19 @@ export default function PurchasesPage() {
                         setSelectedInvoice((cur: any) => (cur && cur.id === inv.id) ? { ...cur, millExtras: res.data?.millExtras } : cur);
                       }).catch(() => {});
                     }
-                  }} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer">
+                  }} className={cn('hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer', selectedIds.has(inv.id) && 'bg-red-50 dark:bg-red-900/10')}>
+                    <td className="pl-5 pr-2 py-4 w-8" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(inv.id)}
+                        onChange={() => {
+                          const next = new Set(selectedIds);
+                          if (next.has(inv.id)) next.delete(inv.id); else next.add(inv.id);
+                          setSelectedIds(next);
+                        }}
+                        className="w-4 h-4 accent-red-600 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">{fmtDate(inv.date)}</td>
                     <td className="px-5 py-4 text-slate-500 dark:text-slate-400 font-mono text-xs">{inv.invoiceNumber || '-'}</td>
                     <td className="px-5 py-4 text-slate-900 dark:text-slate-200 font-bold">{inv.supplier?.name}</td>
@@ -1716,6 +1771,38 @@ export default function PurchasesPage() {
             mutateInvoices();
           }}
         />
+      )}
+
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 flex items-center gap-2">
+              <Trash2 size={18} className="text-red-600 dark:text-red-400" />
+              <h3 className="font-bold text-red-700 dark:text-red-400">Delete {selectedIds.size} Purchase{selectedIds.size > 1 ? 's' : ''}?</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700 dark:text-slate-300">This will permanently delete {selectedIds.size} selected purchase invoice{selectedIds.size > 1 ? 's' : ''}. This cannot be undone.</p>
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer">
+                <input type="checkbox" checked={deleteReverseStock} onChange={e => setDeleteReverseStock(e.target.checked)} className="mt-0.5 w-4 h-4 accent-red-600" />
+                <span className="text-sm">
+                  <span className="block font-bold text-slate-900 dark:text-white">{t('reverseStockLabel') || 'Also reverse the stock these purchases added'}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {deleteReverseStock ? (t('reverseStockOnHint') || 'Stock will be subtracted back. Blocked if already sold.') : (t('reverseStockOffHint') || 'Stock stays as-is — only invoices and supplier ledger entries are removed.')}
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
+              <button onClick={() => setShowBulkDeleteConfirm(false)} disabled={bulkDeleting} className="px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                {t('cancel') || 'Cancel'}
+              </button>
+              <button onClick={confirmBulkDelete} disabled={bulkDeleting} className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold shadow-sm hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                {bulkDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Delete {selectedIds.size}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {deleteTarget && (
