@@ -338,6 +338,7 @@
     "resetModalTitle": "Reset All Data?",
     "resetModalWarning": "This will permanently delete ALL business data — bills, products, parties, purchases, production records and stock. This cannot be undone.",
     "resetConfirmPlaceholder": "Type RESET to confirm",
+    "resetPasswordLabel": "Your Login Password",
     "resetConfirmWord": "RESET",
     "resetConfirmBtn": "Yes, Delete Everything",
     "resetting": "Deleting...",

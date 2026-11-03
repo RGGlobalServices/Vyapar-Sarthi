@@ -200,16 +200,18 @@ function SettingsPageInner() {
   // Reset app state
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
   const [resetting, setResetting] = useState(false);
 
   const handleReset = async () => {
-    if (resetConfirm !== 'RESET') return;
+    if (resetConfirm !== 'RESET' || !resetPassword) return;
     setResetting(true);
     try {
-      await api.post('/shop/reset', { confirmText: 'RESET' });
+      await api.post('/shop/reset', { confirmText: 'RESET', password: resetPassword });
       setStatus({ type: 'success', message: t('resetSuccess') });
       setShowResetModal(false);
       setResetConfirm('');
+      setResetPassword('');
       // Reload the page so all cached data is cleared
       window.location.href = `/${locale}/`;
     } catch (err: any) {
@@ -1416,16 +1418,27 @@ function SettingsPageInner() {
               />
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t('resetPasswordLabel') || 'Your Login Password'}</label>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={e => setResetPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+
             <div className="flex gap-3 pt-1">
               <button
-                onClick={() => { setShowResetModal(false); setResetConfirm(''); }}
+                onClick={() => { setShowResetModal(false); setResetConfirm(''); setResetPassword(''); }}
                 className="flex-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-xl font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleReset}
-                disabled={resetConfirm !== 'RESET' || resetting}
+                disabled={resetConfirm !== 'RESET' || !resetPassword || resetting}
                 className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-500 transition-all disabled:opacity-40 flex items-center justify-center gap-2"
               >
                 {resetting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireShop } from '@/lib/server/auth';
 import prisma from '@/lib/server/prisma';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
+import bcrypt from 'bcryptjs';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -9,12 +10,13 @@ export const dynamic = 'force-dynamic';
  * POST /api/v1/shop/reset
  * Deletes ALL business data for the current shop.
  * Shop profile, subscription and user account are untouched.
- * Body: { confirmText: "RESET" }
+ * Body: { confirmText: "RESET", password: "<login password>" }
  */
 export async function POST(req: NextRequest) {
   let shop: Awaited<ReturnType<typeof requireShop>>['shop'];
+  let user: Awaited<ReturnType<typeof requireShop>>['user'];
   try {
-    ({ shop } = await requireShop(req));
+    ({ shop, user } = await requireShop(req));
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -22,6 +24,15 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   if (body.confirmText !== 'RESET') {
     return NextResponse.json({ error: 'Confirmation text mismatch' }, { status: 400 });
+  }
+
+  if (!body.password) {
+    return NextResponse.json({ error: 'Password is required' }, { status: 400 });
+  }
+  const dbUser = await prisma.user.findUnique({ where: { uuid: user.uuid }, select: { password: true } });
+  const valid = dbUser ? await bcrypt.compare(body.password, dbUser.password) : false;
+  if (!valid) {
+    return NextResponse.json({ error: 'Incorrect password' }, { status: 403 });
   }
 
   const shopId = shop.id;

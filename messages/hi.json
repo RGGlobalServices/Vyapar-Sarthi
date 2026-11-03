@@ -1288,6 +1288,7 @@
     "resetModalTitle": "सभी डेटा रीसेट करें?",
     "resetModalWarning": "यह सभी व्यावसायिक डेटा — बिल, उत्पाद, पार्टी, खरीद, उत्पादन रिकॉर्ड और स्टॉक — स्थायी रूप से हटा देगा। यह पूर्ववत नहीं किया जा सकता।",
     "resetConfirmPlaceholder": "पुष्टि के लिए RESET टाइप करें",
+    "resetPasswordLabel": "आपका लॉगिन पासवर्ड",
     "resetConfirmWord": "RESET",
     "resetConfirmBtn": "हाँ, सब कुछ हटाएं",
     "resetting": "हटाया जा रहा है...",
