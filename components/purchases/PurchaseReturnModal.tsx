@@ -71,8 +71,19 @@ export default function PurchaseReturnModal({
         alreadyReturned.set(k, (alreadyReturned.get(k) || 0) + it.quantity);
       }
     }
+    // Build a currentStock lookup per productId from the items' embedded product.
+    const stockByProduct = new Map<string, number>();
+    for (const item of invoice.purchaseItems || []) {
+      if (item.product && !stockByProduct.has(item.productId)) {
+        stockByProduct.set(item.productId, Number(item.product.currentStock ?? item.product.stock ?? 0));
+      }
+    }
     return [...originals.entries()].map(([key, o]) => {
-      const remaining = Math.max(0, o.qty - (alreadyReturned.get(key) || 0));
+      const purchaseRemaining = Math.max(0, o.qty - (alreadyReturned.get(key) || 0));
+      // Cap at current stock — can't return more than what's physically on hand.
+      // If some units were sold, stock is lower than purchaseRemaining.
+      const currentStock = stockByProduct.get(o.productId) ?? purchaseRemaining;
+      const remaining = Math.min(purchaseRemaining, currentStock);
       return {
         key,
         productId: o.productId,
@@ -80,10 +91,6 @@ export default function PurchaseReturnModal({
         unit: o.unit,
         remaining,
         nameText: o.name + (o.variantKey ? ` (${o.variantKey})` : ''),
-        // Pre-filled with the full remaining quantity so ticking the
-        // checkbox on is a one-tap "return all of this" — but the line
-        // itself starts unselected (see `selected` below), so nothing is
-        // actually included in the return until the shopkeeper picks it.
         qtyText: String(remaining),
         rateText: String(o.rate),
         selected: false,
@@ -299,7 +306,7 @@ export default function PurchaseReturnModal({
                         className="flex-1 min-w-0 bg-transparent text-sm font-bold outline-none border-b border-dashed border-slate-300 dark:border-slate-700 pb-1"
                       />
                     </div>
-                    <p className="text-[10px] text-slate-500 pl-6">Purchased qty remaining to return: <b>{l.remaining}</b>{l.unit ? ` ${l.unit}` : ''}</p>
+                    <p className="text-[10px] text-slate-500 pl-6">Available to return: <b>{l.remaining}</b>{l.unit ? ` ${l.unit}` : ''} (in stock)</p>
                     <div className="grid grid-cols-3 gap-2 pl-6">
                       <div>
                         <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Return Qty</label>
