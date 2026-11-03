@@ -557,7 +557,9 @@ export default function AddBillModal({
     const order: string[] = [];
     const map = new Map<string, BillLine[]>();
     for (const l of lines) {
-      const gKey = l.productId || `name:${l.name.trim().toLowerCase()}`;
+      // shortcut: typed-duplicate merging dropped — name-based gKey changes every
+      // keystroke, causing React to remount the card and lose input focus.
+      const gKey = l.productId || l.key;
       if (!map.has(gKey)) { map.set(gKey, []); order.push(gKey); }
       map.get(gKey)!.push(l);
     }
