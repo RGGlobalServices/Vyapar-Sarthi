@@ -480,7 +480,7 @@ export default function ProductDetailsSheet({
                 const variants = (nativeVariants.length > 0 && (nativeTotal > 0 || legacyVariants.length === 0))
                   ? nativeVariants
                   : legacyVariants;
-                if (variants.length === 0) return null;
+                if (variants.length === 0 || displayProduct.productType === 'single') return null;
                 // Liquor's variant grid is Bottle Type × Volume(ML), not an actual
                 // colour swatch — same underlying {color, size} shape (see
                 // ThreeWayVariantGrid/LIQUOR_RULES), just relabelled here so the
