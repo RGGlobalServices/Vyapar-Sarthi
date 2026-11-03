@@ -20,12 +20,16 @@ export type ReversedInvoice = Prisma.PurchaseInvoiceGetPayload<{ include: { purc
  *
  * `reverseStock` (default true) lets a caller skip the stock/godown side
  * entirely — used by DELETE when the shopkeeper explicitly says "delete this
- * purchase record but leave my stock count as it is" (e.g. a duplicate/wrong
- * entry whose stock has already been mixed in and partly sold, where full
- * reversal would otherwise throw PurchaseReversalBlockedError and leave the
- * bad invoice stuck forever). The supplier balance/cashbook side is still
- * always reversed — it's a bookkeeping correction independent of physical
- * stock and never blocked by a negative-stock check.
+ * purchase record but leave my stock count as it is".
+ *
+ * `capReversal` (default false) — when true, instead of throwing
+ * PurchaseReversalBlockedError if a product's currentStock is below what this
+ * purchase added (because some was sold/returned), the reversal is capped to
+ * min(purchasedQty, currentStock) so delete always succeeds. Only set on
+ * DELETE; PATCH (edit) must still throw because its reversal+reapply cycle
+ * produces wrong totals when the reversal is partial. The supplier
+ * balance/cashbook side is always reversed — it's a bookkeeping correction
+ * independent of physical stock and never blocked by a negative-stock check.
  *
  * Deliberately does NOT touch SupplierTransaction/Batch here — see
  * cleanupPurchaseLedgerAndBatches. Keeping this function to only the
@@ -38,9 +42,9 @@ export async function reversePurchaseInvoiceEffects(
   tx: Prisma.TransactionClient,
   shopId: string,
   invoiceId: string,
-  options: { reverseStock?: boolean } = {}
+  options: { reverseStock?: boolean; capReversal?: boolean } = {}
 ): Promise<ReversedInvoice> {
-  const { reverseStock = true } = options;
+  const { reverseStock = true, capReversal = false } = options;
   const invoice = await tx.purchaseInvoice.findFirst({
     where: { id: invoiceId, shopId },
     include: { purchaseItems: true },
@@ -77,9 +81,15 @@ export async function reversePurchaseInvoiceEffects(
       });
       const short = products.filter(p => (p.currentStock ?? 0) < (qtyByProduct.get(p.id) || 0));
       if (short.length) {
-        throw new PurchaseReversalBlockedError(
-          `Cannot undo this purchase — stock already sold/moved for: ${short.map(p => p.name).join(', ')}. Adjust stock manually first.`
-        );
+        if (!capReversal) {
+          throw new PurchaseReversalBlockedError(
+            `Cannot undo this purchase — stock already sold/moved for: ${short.map(p => p.name).join(', ')}. Adjust stock manually first.`
+          );
+        }
+        // Cap each product's reversal to what's still on hand — the rest was already sold/returned
+        for (const p of short) {
+          qtyByProduct.set(p.id, Math.max(0, p.currentStock ?? 0));
+        }
       }
     }
 

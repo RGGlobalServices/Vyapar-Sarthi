@@ -422,7 +422,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
     } catch (e) { console.error('Purchase snapshot for trash failed:', e); }
 
     const invoice = await prisma.$transaction(async (tx) => {
-      const inv = await reversePurchaseInvoiceEffects(tx, auth.shop.id, id, { reverseStock });
+      const inv = await reversePurchaseInvoiceEffects(tx, auth.shop.id, id, { reverseStock, capReversal: true });
       await tx.activityLog.create({
         data: {
           shopId: auth.shop.id,
