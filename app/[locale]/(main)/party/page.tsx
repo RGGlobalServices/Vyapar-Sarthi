@@ -1988,10 +1988,6 @@ function PartiesPanel() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-bold mb-1">{t('fssaiLabel')}</label>
-                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm" maxLength={14} placeholder={t('fssaiPlaceholder')} />
-                    </div>
-                    <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
                       <input value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800" />
                     </div>
@@ -2064,10 +2060,6 @@ function PartiesPanel() {
                         <label className="block text-sm font-bold mb-1">{t('gstin')}</label>
                         <input value={form.gst} onChange={e=>setForm({...form, gst: e.target.value.toUpperCase()})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={15} />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold mb-1">{t('fssaiLabel')}</label>
-                      <input value={form.fssai} onChange={e=>setForm({...form, fssai: e.target.value})} className="w-full h-10 px-3 border rounded-lg dark:bg-slate-950 dark:border-slate-800 font-mono text-sm focus:ring-2 focus:ring-indigo-500 transition-shadow" maxLength={14} placeholder={t('fssaiPlaceholder')} />
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-1">{t('address')}</label>
