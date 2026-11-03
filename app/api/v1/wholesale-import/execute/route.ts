@@ -897,6 +897,10 @@ export async function POST(req: NextRequest) {
                   category: getVal(row, ['category']) || 'General',
                   currentStock: stockSeed,
                   variants: newVariants.length ? (newVariants as any) : undefined,
+                  ...(newVariants.length ? {
+                    size_variants: JSON.stringify(variantsToSizeMap(cleanVariants(newVariants))),
+                    productType: 'variant',
+                  } : {}),
                   metadata: rowColour ? { color: rowColour } : {},
                   ...getProductExtras(row),
                 }
@@ -945,6 +949,8 @@ export async function POST(req: NextRequest) {
                   rowColour, rowSize, quantity, unitCost, extractedMrp, rowSellingPrice,
                 );
                 updateData.variants = mergedVariants as any;
+                updateData.size_variants = JSON.stringify(variantsToSizeMap(cleanVariants(mergedVariants)));
+                updateData.productType = 'variant';
                 variantsIndex.set(matchId, mergedVariants);
               }
               productUpdateMap.set(matchId, { id: matchId as string, data: updateData });
