@@ -357,11 +357,16 @@ export async function POST(req: NextRequest) {
           const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '', { dimensions: isDimensionSizes });
           if (sizes.length <= 1) { expandedProductData.push(row); continue; }
           const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
-          for (const s of sizes) {
+          const qtyKey2 = Object.keys(row).find(k => ['quantity','qty','stock'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          const totalQty2 = qtyKey2 ? (parseFloat(String(row[qtyKey2])) || 0) : 0;
+          const perSize2 = qtyKey2 && sizes.length > 0 ? Math.floor(totalQty2 / sizes.length) : 0;
+          const remainder2 = qtyKey2 ? totalQty2 - perSize2 * sizes.length : 0;
+          sizes.forEach((s, i) => {
             const clone: any = { ...row };
             if (sizeKey) clone[sizeKey] = s; else clone.Size = s;
+            if (qtyKey2) clone[qtyKey2] = perSize2 + (i === sizes.length - 1 ? remainder2 : 0);
             expandedProductData.push(clone);
-          }
+          });
         }
 
         for (let i = 0; i < expandedProductData.length; i++) {
@@ -811,15 +816,21 @@ export async function POST(req: NextRequest) {
           const sizeRaw = getVal(row, ['size']);
           const sizes = parseSizeRange(sizeRaw ? String(sizeRaw) : '', { dimensions: isDimensionSizes });
           if (sizes.length <= 1) { expandedData.push(row); continue; }
-          for (const s of sizes) {
-            // Clone the row and overwrite whichever key the file used for size
-            // so downstream getVal(row, ['size']) picks the individual value.
+          const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
+          // qty on a range row is the TOTAL across all sizes; divide evenly so
+          // "3x8, qty=24" → 4 per size rather than 24 per size
+          const qtyKey = Object.keys(row).find(k => ['quantity','qty','stock'].includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          const totalQty = qtyKey ? (parseFloat(String(row[qtyKey])) || 0) : 0;
+          const perSize = qtyKey && sizes.length > 0 ? Math.floor(totalQty / sizes.length) : 0;
+          const remainder = qtyKey ? totalQty - perSize * sizes.length : 0;
+          sizes.forEach((s, i) => {
             const clone: any = { ...row };
-            const sizeKey = Object.keys(row).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === 'size');
             if (sizeKey) clone[sizeKey] = s;
             else clone.Size = s;
+            // last size absorbs any rounding remainder
+            if (qtyKey) clone[qtyKey] = perSize + (i === sizes.length - 1 ? remainder : 0);
             expandedData.push(clone);
-          }
+          });
         }
         // Accumulators — filled per row, flushed in bulk after the loop to
         // cut round-trips from O(N×5) sequential to ~O(N) + a few batch writes.
