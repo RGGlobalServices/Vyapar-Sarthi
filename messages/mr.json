@@ -2718,7 +2718,11 @@
     "showingRecords": "{from}–{to} दाखवत आहे, एकूण {total} इनव्हॉइस",
     "recordsCount": "{count} नोंदी",
     "eachLabel": "प्रत्येक",
-    "ofLabel": "{max} पैकी"
+    "ofLabel": "{max} पैकी",
+    "returnItemBtn": "परत करा",
+    "returnedBadge": "परत केले",
+    "confirmReturn": "परतावा नक्की करा?",
+    "returnItemSuccess": "आयटम परत केला. स्टॉक अपडेट झाला."
   },
   "ManualBillUpload": {
     "onlyJpgPngPdf": "फक्त JPG, JPEG, PNG किंवा PDF फाइल्सना परवानगी आहे.",

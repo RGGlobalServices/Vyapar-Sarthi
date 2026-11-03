@@ -109,14 +109,13 @@ function ReturnDialog({ invoice, onClose, onDone }: { invoice: Invoice; onClose:
   useEffect(() => {
     api.get(`/billing/${invoice.id}`)
       .then(res => {
-        setReturnItems((res.data.items || []).map((i: any) => ({
-          item_id: i.id,
-          name: i.name,
-          quantity: i.quantity,
-          maxQty: i.quantity,
-          price: i.price_per_unit,
-          selected: true,
-        })));
+        setReturnItems((res.data.items || [])
+          .filter((i: any) => !i.is_charge)
+          .map((i: any) => {
+            const remaining = Math.max(0, i.quantity - (i.returned_quantity || 0));
+            return remaining > 0 ? { item_id: i.id, name: i.name, quantity: remaining, maxQty: remaining, price: i.price_per_unit, selected: true } : null;
+          })
+          .filter(Boolean));
       })
       .catch(console.error)
       .finally(() => setDetailLoading(false));

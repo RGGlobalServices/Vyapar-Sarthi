@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link, useRouter } from '@/i18n/routing';
 import MillInvoicePreviewModal from '@/components/invoice/MillInvoicePreviewModal';
 import { isMillInvoice } from '@/lib/millInvoice';
-import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download, ArrowRightLeft } from 'lucide-react';
+import { IndianRupee, ArrowLeft, RefreshCw, Calendar, User, Package, Clock, Printer, CreditCard, ChevronRight, Download, ArrowRightLeft, RotateCcw } from 'lucide-react';
 import { cn, fmtDate } from '@/lib/utils';
 import { BillSlip } from '@/components/BillSlip';
 import { useAuthStore } from '@/lib/store';
@@ -24,6 +24,8 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [confirmReturnId, setConfirmReturnId] = useState<string | null>(null);
+  const [returning, setReturning] = useState(false);
   const componentRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
   const { profile, fetchProfile, activeShopId, allShops } = useBusinessStore();
@@ -111,6 +113,22 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const handlePrint = async () => {
     if (componentRef.current) await waitForQrCode(componentRef.current, !!billData.upiId);
     printBill();
+  };
+
+  const handleReturnItem = async (itemId: string, remaining: number) => {
+    if (confirmReturnId !== itemId) { setConfirmReturnId(itemId); return; }
+    setReturning(true);
+    try {
+      await api.post('/billing/returns', { bill_id: invoice.id, items: [{ item_id: itemId, quantity: remaining }] });
+      const res = await api.get(`/billing/${id}`);
+      setInvoice(res.data);
+      setConfirmReturnId(null);
+      alert(t('returnItemSuccess'));
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || t('returnFailed'));
+    } finally {
+      setReturning(false);
+    }
   };
 
   if (loading) {
@@ -358,10 +376,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   <th className="px-6 py-4 text-right">{t('colPrice')}</th>
                   <th className="px-6 py-4 text-right">{t('colGstPercent')}</th>
                   <th className="px-6 py-4 text-right">{t('colTotal')}</th>
+                  <th className="px-6 py-4 text-center w-24"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/50 text-slate-900 dark:text-slate-200">
-                {items.map((item: any) => (
+                {items.map((item: any) => {
+                  const remaining = Math.max(0, (item.quantity || 0) - (item.returned_quantity || 0));
+                  const isPending = confirmReturnId === item.id;
+                  return (
                   <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-bold">{item.name}</div>
@@ -373,12 +395,39 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                       <div className="text-[10px] text-slate-500 font-bold uppercase">{item.unit}</div>
                     </td>
                     <td className="px-6 py-4 text-center text-slate-500 font-medium">{item.hsnCode || '-'}</td>
-                    <td className="px-6 py-4 text-center font-black">{item.quantity}</td>
+                    <td className="px-6 py-4 text-center font-black">
+                      {item.quantity}
+                      {item.returned_quantity > 0 && (
+                        <div className="text-[10px] text-orange-500 font-bold">−{item.returned_quantity} {t('returnedBadge')}</div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">₹{(Number(item.price_per_unit) || 0).toLocaleString('en-IN')}</td>
                     <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-medium">{item.gstPercent ? `${item.gstPercent}%` : '-'}</td>
                     <td className="px-6 py-4 text-right font-black">₹{(Number(item.total) || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-6 py-4 text-center">
+                      {!item.is_charge && remaining > 0 && (
+                        <button
+                          onClick={() => handleReturnItem(item.id, remaining)}
+                          disabled={returning}
+                          title={t('returnItemBtn')}
+                          className={cn(
+                            'flex items-center gap-1 mx-auto px-2 py-1 rounded-lg text-[10px] font-bold transition-all',
+                            isPending
+                              ? 'bg-orange-500 text-white hover:bg-orange-600'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-orange-500 hover:bg-orange-500/10'
+                          )}
+                        >
+                          <RotateCcw size={11} />
+                          {isPending ? t('confirmReturn') : t('returnItemBtn')}
+                        </button>
+                      )}
+                      {!item.is_charge && remaining === 0 && item.returned_quantity > 0 && (
+                        <span className="text-[10px] text-slate-400 font-medium">{t('returnedBadge')}</span>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </CardContent>

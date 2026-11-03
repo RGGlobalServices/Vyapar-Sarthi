@@ -1804,7 +1804,11 @@
     "showingRecords": "Showing {from}–{to} of {total} invoices",
     "recordsCount": "{count} records",
     "eachLabel": "each",
-    "ofLabel": "of {max}"
+    "ofLabel": "of {max}",
+    "returnItemBtn": "Return Item",
+    "returnedBadge": "Returned",
+    "confirmReturn": "Confirm Return?",
+    "returnItemSuccess": "Item returned. Stock restored."
   },
   "ManualBillUpload": {
     "onlyJpgPngPdf": "Only JPG, JPEG, PNG or PDF files are supported.",
