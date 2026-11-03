@@ -209,7 +209,7 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
             </thead>
             <tbody>
               {goodsItems.map((item, idx) => (
-                <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50' : undefined} style={{ borderTop: '1px solid #cbd5e1' }}>
+                <tr key={idx} className={idx % 2 === 0 ? 'bg-slate-50' : undefined} style={{ borderTop: '1px solid #cbd5e1' }}>
                   <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
                   {columns.map((col) => {
                     const isItemCol = col.id === 'item';
@@ -484,6 +484,19 @@ export const A4Invoice = React.forwardRef<HTMLDivElement, BaseInvoiceProps>(({
                     </div>
                   );
                 })()}
+              </div>
+
+              {/* Total Amount — prominent row at the bottom of the breakdown */}
+              <div
+                style={{
+                  borderTopColor: isMinimal ? hairline : accent,
+                  backgroundColor: isModern || isStylish ? accent : (isMinimal ? undefined : '#f8fafc'),
+                  color: isModern || isStylish ? '#ffffff' : (isMinimal ? accent : undefined),
+                }}
+                className="flex justify-between items-center px-4 py-3 border-t-2"
+              >
+                <span className="text-base font-black uppercase">{t('total') || 'Total Amount'}</span>
+                <span className="text-xl font-black">₹{inr(total)}</span>
               </div>
 
               {/* Payment Summary */}
