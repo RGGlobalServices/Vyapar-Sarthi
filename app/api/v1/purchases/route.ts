@@ -226,6 +226,8 @@ export async function POST(req: Request) {
               date: date ? new Date(date) : new Date(),
               totalCost,
               gst: totalGst,
+              discount: discountAmt,
+              ...(parsedCharges.length > 0 ? { charges: parsedCharges as any } : {}),
               ...(data.tareWeightKg != null && data.tareWeightKg !== '' ? { tareWeightKg: Number(data.tareWeightKg) } : {}),
               ...(data.grossWeightKg != null && data.grossWeightKg !== '' ? { grossWeightKg: Number(data.grossWeightKg) } : {}),
             },
@@ -383,10 +385,25 @@ export async function POST(req: Request) {
               supplierId,
               type: 'purchase',
               amount: totalCost,
-              billNumber: invoiceNumber,
-              note: `Purchase Invoice: ${invoiceNumber}`,
+              billNumber: invoiceNumber || null,
+              note: `Purchase Invoice: ${invoiceNumber || invoiceId}`,
+              createdAt: date ? new Date(date) : new Date(),
             }
           });
+
+          if (finalAmountPaid > 0) {
+            await tx.supplierTransaction.create({
+              data: {
+                supplierId,
+                type: 'payment',
+                amount: finalAmountPaid,
+                billNumber: invoiceNumber || null,
+                note: `Payment for Purchase Invoice: ${invoiceNumber || invoiceId}`,
+                paymentMethod: finalPaymentMode,
+                createdAt: date ? new Date(date) : new Date(),
+              }
+            });
+          }
 
           // 8. CashBook
           if (finalAmountPaid > 0 && finalPaymentMode.toLowerCase() === 'cash') {

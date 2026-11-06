@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
 import { parseCharges, chargesTotal } from '@/lib/server/purchaseCharges';
 import { logBrokerCommission } from '@/lib/server/brokerCommission';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { assertOwned } from '@/lib/server/ownership';
@@ -763,6 +764,7 @@ export async function POST(req: NextRequest) {
             date: billDate,
             totalCost: 0,
             gst: 0,
+            discount: billDiscount,
             ...(tareWeightKg != null && isFinite(tareWeightKg) ? { tareWeightKg } : {}),
             ...(grossWeightKg != null && isFinite(grossWeightKg) ? { grossWeightKg } : {}),
           }
@@ -1094,6 +1096,7 @@ export async function POST(req: NextRequest) {
           data: {
             totalCost: Math.max(0, totalInvoiceCost + billChargesTotal - billDiscount),
             gst: Math.round(totalInvoiceGst * 100) / 100,
+            discount: billDiscount,
             ...(billCharges.length ? { charges: billCharges as any } : {}),
           }
         });
@@ -1151,6 +1154,7 @@ export async function POST(req: NextRequest) {
           const br = (body as any).broker;
           if (String(br?.name ?? '').trim()) await logBrokerCommission(shopId, { name: br.name, commission: br.commission, billNumber: String(invoiceNumber), kind: 'supplier', party: String(getVal(firstRow, ['supplier', 'vendor', 'suppliername']) || ''), purchaseInvoiceId: purchaseInvoice.id });
         } catch (e) { console.error('[import purchase] broker step failed (purchase kept):', e); }
+        invalidateDashboardCacheForShop(shopId);
         break;
       }
 

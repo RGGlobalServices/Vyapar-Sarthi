@@ -12,6 +12,7 @@ import { reversePurchaseInvoiceEffects, cleanupPurchaseLedgerAndBatches, Purchas
 import { checkLargeTransactionAlert } from '@/lib/server/notificationsEngine';
 import { applyVariantStockDeltas, type VariantStockDelta } from '@/lib/server/variantStock';
 import { recordDeletion } from '@/lib/server/trash';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -134,6 +135,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
           date: date ? new Date(date) : new Date(),
           totalCost,
           gst: totalGst,
+          discount: discountAmt,
           ...(data.tareWeightKg !== undefined ? { tareWeightKg: data.tareWeightKg != null && data.tareWeightKg !== '' ? Number(data.tareWeightKg) : null } : {}),
           ...(data.grossWeightKg !== undefined ? { grossWeightKg: data.grossWeightKg != null && data.grossWeightKg !== '' ? Number(data.grossWeightKg) : null } : {}),
         },
@@ -223,9 +225,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
             supplierId,
             type: 'purchase',
             amount: totalCost,
+            billNumber: invoiceNumber || null,
             note: `Purchase Invoice: ${invoiceNumber || id}`,
+            createdAt: date ? new Date(date) : new Date(),
           },
         }),
+        finalAmountPaid > 0
+          ? tx.supplierTransaction.create({
+              data: {
+                supplierId,
+                type: 'payment',
+                amount: finalAmountPaid,
+                billNumber: invoiceNumber || null,
+                note: `Payment for Purchase Invoice: ${invoiceNumber || id}`,
+                paymentMethod: finalPaymentMode,
+                createdAt: date ? new Date(date) : new Date(),
+              },
+            })
+          : null,
         finalAmountPaid > 0 && finalPaymentMode.toLowerCase() === 'cash'
           ? tx.cashBook.create({
               data: {
@@ -348,6 +365,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       });
     } catch (e) { console.error('Notification failed', e); }
 
+    invalidateDashboardCacheForShop(auth!.shop.id);
     return NextResponse.json({ success: true, invoice });
   } catch (error: any) {
     if (error instanceof PurchaseReversalBlockedError) {
@@ -466,6 +484,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
       } catch (e) { console.error('Variant stock update failed:', e); }
     }
 
+    invalidateDashboardCacheForShop(auth!.shop.id);
     return NextResponse.json({ success: true, stockReversed: reverseStock });
   } catch (error: any) {
     if (error instanceof PurchaseReversalBlockedError) {

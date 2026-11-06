@@ -3,6 +3,7 @@ import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { isSupplierCredit } from '@/lib/server/ledgerClassification';
 import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
+import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,32 +34,30 @@ export const GET = handle(async (req, ctx: any) => {
   const to = toRaw ? new Date(toRaw) : null;
   if (to) to.setHours(23, 59, 59, 999);
 
-  const transactions = await prisma.supplierTransaction.findMany({
-    where: {
-      supplierId: id,
-      ...(from || to
-        ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
-        : {}),
-    },
-    // sequence (insertion order) breaks ties among rows backdated to the same
-    // calendar day, which otherwise share the identical midnight timestamp —
-    // see the schema comment on SupplierTransaction.sequence.
-    orderBy: [{ createdAt: 'desc' }, { sequence: 'desc' }],
+  // 1. Fetch full transaction history for this supplier to maintain accurate AP ledger balances,
+  // payment allocations, and per-bill status, regardless of UI date filters.
+  const allSupplierTransactions = await prisma.supplierTransaction.findMany({
+    where: { supplierId: id },
+    orderBy: [{ createdAt: 'asc' }, { sequence: 'asc' }],
   });
 
-  // Compute a payment-due date per purchase from the supplier's own credit
-  // terms — dueDate = purchaseDate + creditDays. Doing this at read time
-  // (instead of persisting a column) avoids a schema change AND keeps the
-  // due date in sync when the shopkeeper edits the terms later. Payments
-  // don't have a due date. When creditDays is 0, no due date is set.
+  // Filter transactions for date window if requested
+  const transactions = allSupplierTransactions.filter((t) => {
+    if (!t.createdAt) return true;
+    const tTime = new Date(t.createdAt).getTime();
+    if (from && tTime < from.getTime()) return false;
+    if (to && tTime > to.getTime()) return false;
+    return true;
+  }).reverse(); // Most recent first for history view
+
+  // Compute a payment-due date per purchase from the supplier's own credit terms
   const creditDays = Number((supplier as any).creditDays) || 0;
   const computeDueDate = (created: Date | null | undefined, type: string | null | undefined): Date | null => {
     if (!created || isSupplierCredit(type) || creditDays <= 0) return null;
     return new Date(new Date(created).getTime() + creditDays * 86400000);
   };
 
-  // Bucket into months keyed 'YYYY-MM' so the UI can render collapsible
-  // month sections without doing date math itself.
+  // Bucket into months keyed 'YYYY-MM'
   const monthMap = new Map<string, { month: string; purchased: number; paid: number; items: any[] }>();
   for (const t of transactions) {
     const d = t.createdAt ? new Date(t.createdAt) : new Date();
@@ -92,75 +91,122 @@ export const GET = handle(async (req, ctx: any) => {
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const totalPaid = totalCashPaid + totalDiscount;
 
-  // Due Invoices / Overdue Amount: the ledger only tracks an aggregate
-  // balance, not which payment paid off which purchase, so we derive both by
-  // replaying the full history oldest-first and applying each payment FIFO
-  // against the oldest still-open purchases — the same assumption real AP
-  // ledgers use absent explicit invoice-level payment allocation. The sum of
-  // the resulting open purchases' remaining amounts always equals
-  // supplier.balance, so these numbers stay consistent with "Outstanding".
-  const chronological = [...transactions].sort((a, b) => {
+  // Chronological AP ledger replay across ALL supplier transactions.
+  // When backdated to the same calendar day, purchases sort BEFORE credits/payments
+  // so payments made on a day properly settle against that day's purchases.
+  const chronological = [...allSupplierTransactions].sort((a, b) => {
     const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return at - bt || a.sequence - b.sequence;
+    if (at !== bt) return at - bt;
+    const aWeight = isSupplierCredit(a.type) ? 2 : 1;
+    const bWeight = isSupplierCredit(b.type) ? 2 : 1;
+    if (aWeight !== bWeight) return aWeight - bWeight;
+    return a.sequence - b.sequence;
   });
-  // allPurchases is append-only (unlike a shift()-ing queue) so a fully
-  // settled bill is still available afterward for the per-bill Total/Paid/
-  // Remaining/Status breakdown below — only the FIFO application below skips
-  // already-settled entries via cursor, it never removes them.
-  const allPurchases: {
-    id: string; billNumber: string; date: Date | null; originalAmount: number;
-    remaining: number; dueDate: Date | null;
-  }[] = [];
-  let fifoCursor = 0;
+
+  type BillRecord = {
+    id: string;
+    billNumber: string;
+    date: Date | null;
+    originalAmount: number;
+    remaining: number;
+    paidAmount: number;
+    dueDate: Date | null;
+    status: 'paid' | 'partial' | 'unpaid';
+    paymentStatus: 'PAID' | 'PARTIALLY_PAID' | 'UNPAID';
+  };
+
+  const allPurchases: BillRecord[] = [];
+  const purchasesByBillNum = new Map<string, BillRecord[]>();
+
   for (const t of chronological) {
     const amount = Number(t.amount) || 0;
-    if (isSupplierCredit(t.type)) {
-      let toApply = amount;
-      while (toApply > 1e-6 && fifoCursor < allPurchases.length) {
-        const p = allPurchases[fifoCursor];
-        const take = Math.min(p.remaining, toApply);
-        p.remaining -= take;
-        toApply -= take;
-        if (p.remaining <= 1e-6) fifoCursor++;
-        else break;
-      }
-    } else if (amount > 1e-6) {
-      // Skip zero/negligible-amount purchase rows entirely — pushing one
-      // with nothing owed would sit in the queue forever counted as "open"
-      // unless a later payment happens to trigger the front-of-queue sweep
-      // above.
-      allPurchases.push({
+    if (!isSupplierCredit(t.type) && amount > 1e-6) {
+      const p: BillRecord = {
         id: t.id,
         billNumber: t.billNumber || '',
         date: t.createdAt,
         originalAmount: amount,
         remaining: amount,
+        paidAmount: 0,
         dueDate: computeDueDate(t.createdAt, t.type),
-      });
+        status: 'unpaid',
+        paymentStatus: 'UNPAID',
+      };
+      allPurchases.push(p);
+      if (p.billNumber) {
+        const list = purchasesByBillNum.get(p.billNumber) || [];
+        list.push(p);
+        purchasesByBillNum.set(p.billNumber, list);
+      }
     }
   }
-  const openNow = new Date();
-  const stillOpen = allPurchases.filter((p) => p.remaining > 1e-6);
 
-  // Per-bill Total/Paid/Remaining/Status lookup, keyed by bill number, for
-  // the exported statement — covers every bill (settled or not), unlike
-  // stillOpen/dueBills above which only track what's currently outstanding.
-  const billBreakdownByNumber = new Map<string, { totalAmount: number; paid: number; remaining: number; status: 'paid' | 'partial' | 'unpaid' }>();
-  for (const p of allPurchases) {
-    if (!p.billNumber) continue;
-    const paid = Math.max(0, p.originalAmount - p.remaining);
-    const status: 'paid' | 'partial' | 'unpaid' = p.remaining <= 1e-6 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
-    billBreakdownByNumber.set(p.billNumber, { totalAmount: p.originalAmount, paid, remaining: Math.max(0, p.remaining), status });
+  // Apply credits/payments: bill-specific allocations first, then FIFO
+  for (const t of chronological) {
+    if (!isSupplierCredit(t.type)) continue;
+    let toApply = Number(t.amount) || 0;
+    if (toApply <= 1e-6) continue;
+
+    // 1. If payment explicitly targets a bill number, allocate to open purchases of that bill first
+    if (t.billNumber && purchasesByBillNum.has(t.billNumber)) {
+      const matchingBills = purchasesByBillNum.get(t.billNumber)!;
+      for (const p of matchingBills) {
+        if (p.remaining > 1e-6) {
+          const take = Math.min(p.remaining, toApply);
+          p.remaining = Math.round((p.remaining - take) * 100) / 100;
+          p.paidAmount = Math.round((p.paidAmount + take) * 100) / 100;
+          toApply = Math.round((toApply - take) * 100) / 100;
+          if (toApply <= 1e-6) break;
+        }
+      }
+    }
+
+    // 2. Any remainder (or general payment) settles FIFO against open purchases
+    if (toApply > 1e-6) {
+      for (const p of allPurchases) {
+        if (p.remaining > 1e-6) {
+          const take = Math.min(p.remaining, toApply);
+          p.remaining = Math.round((p.remaining - take) * 100) / 100;
+          p.paidAmount = Math.round((p.paidAmount + take) * 100) / 100;
+          toApply = Math.round((toApply - take) * 100) / 100;
+          if (toApply <= 1e-6) break;
+        }
+      }
+    }
   }
+
+  // Finalize payment statuses
+  for (const p of allPurchases) {
+    if (p.remaining <= 0.005) {
+      p.remaining = 0;
+      p.status = 'paid';
+      p.paymentStatus = 'PAID';
+    } else if (p.paidAmount > 0.005) {
+      p.status = 'partial';
+      p.paymentStatus = 'PARTIALLY_PAID';
+    } else {
+      p.status = 'unpaid';
+      p.paymentStatus = 'UNPAID';
+    }
+  }
+
+  const openNow = new Date();
+  const stillOpen = allPurchases.filter((p) => p.remaining > 0.005);
+
+  const billBreakdownById = new Map<string, BillRecord>();
+  const billBreakdownByNumber = new Map<string, BillRecord>();
+  for (const p of allPurchases) {
+    billBreakdownById.set(p.id, p);
+    if (p.billNumber) billBreakdownByNumber.set(p.billNumber, p);
+  }
+
   const dueInvoicesCount = stillOpen.length;
   const overdueAmount = stillOpen.reduce(
     (sum, p) => sum + (p.dueDate && p.dueDate < openNow ? p.remaining : 0),
     0
   );
-  // Per-bill breakdown for the "pay against this bill" picker — oldest first,
-  // matching the FIFO order payments actually settle in, so the bill at the
-  // top of the list is also the one a payment would apply to first.
+
   const dueBills = [...stillOpen]
     .sort((a, b) => (a.date ? new Date(a.date).getTime() : 0) - (b.date ? new Date(b.date).getTime() : 0))
     .map((p) => ({
@@ -168,8 +214,11 @@ export const GET = handle(async (req, ctx: any) => {
       billNumber: p.billNumber,
       date: p.date,
       originalAmount: p.originalAmount,
+      paidAmount: p.paidAmount,
       remaining: p.remaining,
       dueDate: p.dueDate,
+      status: p.status,
+      paymentStatus: p.paymentStatus,
     }));
 
   return json({
@@ -198,7 +247,7 @@ export const GET = handle(async (req, ctx: any) => {
     months,
     dueBills,
     transactions: transactions.map((t) => {
-      const bill = t.billNumber ? billBreakdownByNumber.get(t.billNumber) : undefined;
+      const bill = t.id ? billBreakdownById.get(t.id) : (t.billNumber ? billBreakdownByNumber.get(t.billNumber) : undefined);
       return {
         id: t.id,
         type: t.type,
@@ -208,13 +257,11 @@ export const GET = handle(async (req, ctx: any) => {
         date: t.createdAt,
         dueDate: computeDueDate(t.createdAt, t.type),
         paymentMethod: (t as any).paymentMethod || null,
-        // Bill-level context (total/paid/remaining/status) attached from the
-        // FIFO breakdown above — only present when the row carries a bill
-        // number that matches a purchase; blank for freehand entries.
-        billTotalAmount: bill?.totalAmount ?? null,
-        billPaid: bill?.paid ?? null,
+        billTotalAmount: bill?.originalAmount ?? null,
+        billPaid: bill?.paidAmount ?? null,
         billRemaining: bill?.remaining ?? null,
         billStatus: bill?.status ?? null,
+        paymentStatus: bill?.paymentStatus ?? null,
       };
     }),
   });
@@ -265,11 +312,21 @@ export const POST = handle(async (req, ctx: any) => {
   let when: Date | undefined;
   if (body.date) {
     const parsed = new Date(body.date);
-    if (!isNaN(parsed.getTime())) when = parsed;
+    if (!isNaN(parsed.getTime())) {
+      const todayYMD = new Date().toISOString().slice(0, 10);
+      const inputYMD = body.date.slice(0, 10);
+      if (inputYMD === todayYMD) {
+        when = new Date();
+      } else {
+        parsed.setHours(23, 59, 59, 999);
+        when = parsed;
+      }
+    }
   }
 
   const note = body.note?.trim() || (type === 'payment' ? 'Payment to supplier' : 'Purchase');
   const billNumber = body.billNumber?.trim() || null;
+  const isExplicitAdvance = (body as any).isAdvance === true || /advance/i.test(note);
 
   // Dukan/Vyapar shops track cash paid to suppliers as an Expense so it shows
   // up in the dashboard's Today's/Month's Expenses. Wholesale-tier shops
@@ -277,6 +334,29 @@ export const POST = handle(async (req, ctx: any) => {
   const trackAsExpense = !isWholesaleTierPackage(shop.subscriptionPlan);
 
   const result = await prisma.$transaction(async (tx) => {
+    // Overpayment validation
+    if (type === 'payment' && !isExplicitAdvance) {
+      if (billNumber) {
+        const billPurchases = await tx.supplierTransaction.findMany({
+          where: { supplierId: id, billNumber, type: 'purchase' }
+        });
+        const billCredits = await tx.supplierTransaction.findMany({
+          where: { supplierId: id, billNumber, type: { in: ['payment', 'purchase_return', 'discount'] } }
+        });
+        const billTotalAmt = billPurchases.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const billPaidAmt = billCredits.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const billRemaining = Math.max(0, billTotalAmt - billPaidAmt);
+        if (billPurchases.length > 0 && amount > billRemaining + 0.01) {
+          throw new ApiError(400, `Payment amount (₹${amount}) exceeds remaining balance of bill #${billNumber} (₹${billRemaining.toLocaleString('en-IN')})`);
+        }
+      }
+
+      const currentBalance = Number(supplier.balance) || 0;
+      if (currentBalance > 0 && amount > currentBalance + 0.01) {
+        throw new ApiError(400, `Payment amount (₹${amount}) exceeds total supplier outstanding balance of ₹${currentBalance.toLocaleString('en-IN')}`);
+      }
+    }
+
     // balance = what is still owed. A purchase adds to it, a payment reduces it.
     const delta = type === 'payment' ? -amount : amount - (hasPartPayment ? paidAmount : 0);
 
@@ -365,5 +445,6 @@ export const POST = handle(async (req, ctx: any) => {
     return { transaction: created, remaining: Number(updated.balance) || 0 };
   });
 
+  invalidateDashboardCacheForShop(shop.id);
   return json(result);
 });

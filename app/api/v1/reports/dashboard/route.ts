@@ -104,15 +104,17 @@ export const GET = handle(async (req) => {
         AND date >= LEAST(${startDate}::timestamptz, ${monthStart}::timestamptz) AND date <= GREATEST(${endDate}::timestamptz, ${todayEnd}::timestamptz)
     `),
 
-    // period / today / month / all-time supplier bills in ONE scan (aggregated on the purchase `date`, like the Purchases page)
+    // period / today / month / all-time supplier bills in ONE scan.
+    // Matches by invoice date OR creation date so bills entered today with a prior vendor date
+    // accurately reflect today's purchasing activity on the dashboard.
     purchases: track(() => prisma.$queryRaw<any[]>`
       SELECT
-        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}), 0)::float8 AS period_amount,
-        (COUNT(*) FILTER (WHERE date >= ${startDate} AND date <= ${endDate}))::int AS period_count,
-        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}), 0)::float8 AS today_amount,
-        (COUNT(*) FILTER (WHERE date >= ${todayStart} AND date <= ${todayEnd}))::int AS today_count,
-        COALESCE(SUM(total_cost) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}), 0)::float8 AS month_amount,
-        (COUNT(*) FILTER (WHERE date >= ${monthStart} AND date <= ${todayEnd}))::int AS month_count,
+        COALESCE(SUM(total_cost) FILTER (WHERE (date >= ${startDate} AND date <= ${endDate}) OR (created_at >= ${startDate} AND created_at <= ${endDate})), 0)::float8 AS period_amount,
+        (COUNT(*) FILTER (WHERE (date >= ${startDate} AND date <= ${endDate}) OR (created_at >= ${startDate} AND created_at <= ${endDate})))::int AS period_count,
+        COALESCE(SUM(total_cost) FILTER (WHERE (date >= ${todayStart} AND date <= ${todayEnd}) OR (created_at >= ${todayStart} AND created_at <= ${todayEnd})), 0)::float8 AS today_amount,
+        (COUNT(*) FILTER (WHERE (date >= ${todayStart} AND date <= ${todayEnd}) OR (created_at >= ${todayStart} AND created_at <= ${todayEnd})))::int AS today_count,
+        COALESCE(SUM(total_cost) FILTER (WHERE (date >= ${monthStart} AND date <= ${todayEnd}) OR (created_at >= ${monthStart} AND created_at <= ${todayEnd})), 0)::float8 AS month_amount,
+        (COUNT(*) FILTER (WHERE (date >= ${monthStart} AND date <= ${todayEnd}) OR (created_at >= ${monthStart} AND created_at <= ${todayEnd})))::int AS month_count,
         COALESCE(SUM(total_cost), 0)::float8 AS total_amount,
         COUNT(*)::int AS total_count
       FROM purchase_invoices

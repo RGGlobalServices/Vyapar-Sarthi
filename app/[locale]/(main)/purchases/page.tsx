@@ -342,11 +342,15 @@ export default function PurchasesPage() {
       setWarehouseId(full.warehouseId || '');
       setTareWeightKg(full.tareWeightKg != null ? String(full.tareWeightKg) : '');
       setGrossWeightKg(full.grossWeightKg != null ? String(full.grossWeightKg) : '');
-      // Bill-level discount isn't stored as its own field — it's the gap between what the items/charges
-      // add up to and the bill's saved total (same reconstruction the Purchase Details view uses).
+      // Bill-level discount: prioritize the explicitly saved discount field,
+      // fallback to recalculation for historical rows
       const goodsTotal = (full.purchaseItems || []).reduce((s: number, it: any) => s + (it.quantity || 0) * (it.cost || 0), 0);
       const chargesSum = (Array.isArray(full.charges) ? full.charges : []).reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
-      setDiscount(Math.max(0, Math.round((goodsTotal + chargesSum - (full.totalCost || 0)) * 100) / 100));
+      const gstSum = (full.purchaseItems || []).reduce((s: number, it: any) => s + (Number(it.gst) || 0), 0) || (Number(full.gst) || 0);
+      const restoredDiscount = full.discount != null && full.discount > 0
+        ? full.discount
+        : Math.max(0, Math.round((goodsTotal + gstSum + chargesSum - (full.totalCost || 0)) * 100) / 100);
+      setDiscount(restoredDiscount);
       const extras = full.millExtras || { hamali: 0, freight: 0, brokerName: null, brokerCommission: 0 };
       setHamali(extras.hamali > 0 ? String(extras.hamali) : '');
       setFreight(extras.freight > 0 ? String(extras.freight) : '');
@@ -494,7 +498,7 @@ export default function PurchasesPage() {
       ...(isMill && slipId && !editingInvoice ? { weighbridgeEntryId: slipId } : {}),
       ...(isMill && tareWeightKg !== '' ? { tareWeightKg } : {}),
       ...(isMill && grossWeightKg !== '' ? { grossWeightKg } : {}),
-      ...(isMill && discount > 0 ? { discount } : {}),
+      discount: Number(discount) || 0,
       ...(isMill && hamali !== '' ? { hamali: Math.max(0, Number(hamali) || 0) } : {}),
       ...(isMill && freight !== '' ? { freight: Math.max(0, Number(freight) || 0), freightParty: freightParty.trim() || undefined } : {}),
       ...(amountPaidNow !== '' && Number(amountPaidNow) > 0 ? { amountPaid: Number(amountPaidNow), paymentMode: 'Cash' } : {}),
@@ -633,7 +637,8 @@ export default function PurchasesPage() {
   // already includes THIS invoice's original total, so back it out of the
   // baseline before adding the in-progress items' new total.
   const selectedSupplier = suppliers.find((s: any) => s.id === supplierId);
-  const purchaseTotal = expandItemsForApi(items).reduce((sum, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.cost) || 0), 0);
+  const itemsSubtotal = expandItemsForApi(items).reduce((sum, item: any) => sum + (Number(item.quantity) || 0) * (Number(item.cost) || 0), 0);
+  const purchaseTotal = Math.max(0, itemsSubtotal - (Number(discount) || 0));
   const baselineOutstanding = (selectedSupplier?.balance || 0) - (editingInvoice?.totalCost || 0);
   const projectedOutstanding = baselineOutstanding + purchaseTotal;
   const overCreditLimitBy = selectedSupplier?.creditLimit > 0 ? projectedOutstanding - selectedSupplier.creditLimit : 0;
@@ -816,7 +821,7 @@ export default function PurchasesPage() {
             </CardContent>
           </Card>
 
-          {isMill && (
+          {(isMill || editingInvoice || discount > 0) && (
             <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm" data-testid="bill-extras">
               <CardContent className="p-6">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">{t('billExtrasTitle') || 'Bill Details'}</h3>
@@ -824,7 +829,7 @@ export default function PurchasesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('billDiscountLabel') || 'Bill Discount'}</label>
-                    <DiscountInput subtotal={purchaseTotal} discount={discount} setDiscount={setDiscount} />
+                    <DiscountInput subtotal={itemsSubtotal} discount={discount} setDiscount={setDiscount} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">{t('amountPaidNowLabel') || 'Amount Paid Now'} <span className="normal-case text-slate-400 font-normal">({t('optionalLabel') || 'optional'})</span></label>
@@ -1624,7 +1629,9 @@ export default function PurchasesPage() {
                 // time as Goods Total + Charges − Discount, so Discount is reconstructed from the
                 // same three numbers already shown here. This is what used to make "why did my
                 // bill amount come out lower" unanswerable: the discount line simply never rendered.
-                const discount = Math.max(0, Math.round((goodsTotal + chargesTotal - billTotal) * 100) / 100);
+                const discount = selectedInvoice.discount != null && selectedInvoice.discount > 0
+                  ? selectedInvoice.discount
+                  : Math.max(0, Math.round((goodsTotal + (selectedInvoice.gst || 0) + chargesTotal - billTotal) * 100) / 100);
                 const paidNow = parseFloat(selectedInvoice.supplier?.paidAmount ?? selectedInvoice.paidAmount ?? '0') || 0;
                 const balance = billTotal - paidNow;
                 const extras = selectedInvoice.millExtras as { hamali: number; freight: number; brokerName: string | null; brokerCommission: number } | undefined;

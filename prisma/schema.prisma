@@ -1360,6 +1360,7 @@ model PurchaseInvoice {
   date             DateTime? @default(now()) @db.Timestamptz(6)
   totalCost        Float?    @map("total_cost")
   gst              Float?
+  discount         Float?    @default(0)
   // Bill-level charges beyond the goods (hamali, freight, loading …): [{ name, amount }]. Already included in totalCost.
   charges          Json?
   // Bada Udyog weighbridge/kanta-chitthi capture on the bill itself — optional, informational only (Net = gross - tare); never affects totalCost or stock.

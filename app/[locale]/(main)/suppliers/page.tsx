@@ -767,8 +767,9 @@ function StatCard({ label, value, subtitle, icon, tone, onClick }: {
   );
 }
 
-function StatusPill({ status }: { status: 'paid' | 'unpaid' | 'partial' }) {
+function StatusPill({ status }: { status: string }) {
   const t = useTranslations('Suppliers');
+  const normalized = (status || '').toLowerCase().includes('part') ? 'partial' : (status || '').toLowerCase() === 'paid' ? 'paid' : 'unpaid';
   const map = {
     paid: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
     partial: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
@@ -776,8 +777,8 @@ function StatusPill({ status }: { status: 'paid' | 'unpaid' | 'partial' }) {
   };
   const label = { paid: t('statusPaid'), partial: t('statusPartial'), unpaid: t('statusUnpaid') };
   return (
-    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${map[status]}`}>
-      {label[status]}
+    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${map[normalized]}`}>
+      {label[normalized]}
     </span>
   );
 }
