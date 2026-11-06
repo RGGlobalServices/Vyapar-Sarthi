@@ -134,11 +134,26 @@ export async function reversePurchaseInvoiceEffects(
   const amountPaid = cashEntries.reduce((sum, c) => sum + c.amount, 0);
   const balanceDelta = (invoice.totalCost || 0) - amountPaid;
 
+  const oldPurchaseTxns = await tx.supplierTransaction.findMany({
+    where: {
+      supplierId: invoice.supplierId,
+      type: 'purchase',
+      OR: [
+        { note: `Purchase Invoice: ${invoice.invoiceNumber || invoice.id}` },
+        ...(invoice.invoiceNumber ? [{ billNumber: invoice.invoiceNumber }] : []),
+        ...(invoice.invoiceNumber ? [{ note: { contains: invoice.invoiceNumber } }] : []),
+        { note: { contains: invoice.id } },
+      ],
+    },
+    select: { id: true },
+  });
+
   await Promise.all([
     balanceDelta !== 0
       ? tx.supplier.update({ where: { id: invoice.supplierId }, data: { balance: { decrement: balanceDelta } } })
       : null,
     cashEntries.length ? tx.cashBook.deleteMany({ where: { id: { in: cashEntries.map(c => c.id) } } }) : null,
+    oldPurchaseTxns.length ? tx.supplierTransaction.deleteMany({ where: { id: { in: oldPurchaseTxns.map(t => t.id) } } }) : null,
   ].filter(Boolean));
 
   return invoice;
@@ -171,26 +186,20 @@ export async function cleanupPurchaseLedgerAndBatches(
   options: { deleteBatches?: boolean } = {}
 ) {
   const { deleteBatches = true } = options;
-  const expectedNote = `Purchase Invoice: ${invoice.invoiceNumber || invoice.id}`;
-  const [txns, batchMatches] = await Promise.all([
-    prisma.supplierTransaction.findMany({
-      where: { supplierId: invoice.supplierId, type: 'purchase', note: expectedNote, amount: invoice.totalCost || 0 },
-    }),
-    deleteBatches ? Promise.all(invoice.purchaseItems.map(item =>
-      prisma.batch.findMany({
-        where: {
-          shopId,
-          productId: item.productId,
-          variantId: item.variantId,
-          quantity: item.quantity,
-          createdAt: invoice.createdAt,
-        },
-      })
-    )) : Promise.resolve([] as Awaited<ReturnType<typeof prisma.batch.findMany>>[]),
-  ]);
+  if (!deleteBatches) return;
+  const batchMatches = await Promise.all(invoice.purchaseItems.map(item =>
+    prisma.batch.findMany({
+      where: {
+        shopId,
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        createdAt: invoice.createdAt,
+      },
+    })
+  ));
 
-  await Promise.all([
-    txns.length === 1 ? prisma.supplierTransaction.delete({ where: { id: txns[0].id } }) : null,
-    ...batchMatches.map(batches => (batches.length === 1 ? prisma.batch.delete({ where: { id: batches[0].id } }) : null)),
-  ].filter(Boolean));
+  await Promise.all(
+    batchMatches.map(batches => (batches.length === 1 ? prisma.batch.delete({ where: { id: batches[0].id } }) : null)).filter(Boolean)
+  );
 }

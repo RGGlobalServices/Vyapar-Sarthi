@@ -2,7 +2,9 @@
  * Unit Regression Test Suite for VyaparSarthii Bada Udyog Pack:
  * 1. Purchase Discount Integrity (Import, Edit, Preservation, Tax & Valuation)
  * 2. Supplier Payment Allocation (Partial Payments, Multiple Partial, Final Settlement, Status)
- * 3. Dashboard Purchases Metrics (Invoice Date vs Creation Date, Filtering)
+ * 3. Purchase Edit After Payment (Reversal & Reapply, Ledger & Stock Consistency)
+ * 4. Dashboard Purchases Metrics (Invoice Date vs Creation Date, Filtering, No Double Counting)
+ * 5. Financial Precision & Rounding Verification
  */
 
 import test from 'node:test';
@@ -106,8 +108,6 @@ test('Purchase Discount: changing discount updates totalCost without double coun
 // ─── 2. Supplier Ledger Replay & Payment Allocation ────────────────────────
 
 function replaySupplierLedger(transactions) {
-  // Sort chronologically:
-  // Same timestamp or same calendar day: purchases sort before credits/payments
   const sorted = [...transactions].sort((a, b) => {
     const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
     const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -220,20 +220,17 @@ test('Supplier Payment: multiple partial payments (₹20,000 then ₹10,000 then
     { id: 'tx-2', type: 'payment', amount: 20000, billNumber: 'BILL-101', createdAt: '2026-11-06T12:00:00Z', sequence: 2 },
   ];
 
-  // Stage 1: After Payment 1 (₹20,000)
   let result = replaySupplierLedger(txns);
   assert.equal(result.allPurchases[0].paidAmount, 20000);
   assert.equal(result.allPurchases[0].remaining, 30000);
   assert.equal(result.allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
 
-  // Stage 2: After Payment 2 (₹10,000)
   txns.push({ id: 'tx-3', type: 'payment', amount: 10000, billNumber: 'BILL-101', createdAt: '2026-11-06T14:00:00Z', sequence: 3 });
   result = replaySupplierLedger(txns);
   assert.equal(result.allPurchases[0].paidAmount, 30000);
   assert.equal(result.allPurchases[0].remaining, 20000);
   assert.equal(result.allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
 
-  // Stage 3: After Final Settlement (₹20,000)
   txns.push({ id: 'tx-4', type: 'payment', amount: 20000, billNumber: 'BILL-101', createdAt: '2026-11-06T16:00:00Z', sequence: 4 });
   result = replaySupplierLedger(txns);
   assert.equal(result.allPurchases[0].paidAmount, 50000);
@@ -245,11 +242,8 @@ test('Supplier Payment: multiple partial payments (₹20,000 then ₹10,000 then
 
 test('Supplier Payment: Bill-specific allocation takes priority over older open bills', () => {
   const txns = [
-    // Old Bill 1: ₹40,000
     { id: 'tx-1', type: 'purchase', amount: 40000, billNumber: 'BILL-001', createdAt: '2026-11-01T10:00:00Z', sequence: 1 },
-    // Newer Bill 2: ₹25,000
     { id: 'tx-2', type: 'purchase', amount: 25000, billNumber: 'BILL-002', createdAt: '2026-11-05T10:00:00Z', sequence: 2 },
-    // User pays ₹15,000 explicitly against Bill 2
     { id: 'tx-3', type: 'payment', amount: 15000, billNumber: 'BILL-002', createdAt: '2026-11-06T10:00:00Z', sequence: 3 },
   ];
 
@@ -257,12 +251,10 @@ test('Supplier Payment: Bill-specific allocation takes priority over older open 
   const bill1 = allPurchases.find(p => p.billNumber === 'BILL-001');
   const bill2 = allPurchases.find(p => p.billNumber === 'BILL-002');
 
-  // Bill 1 should remain completely untouched (0 paid, 40000 remaining, UNPAID)
   assert.equal(bill1.paidAmount, 0);
   assert.equal(bill1.remaining, 40000);
   assert.equal(bill1.paymentStatus, 'UNPAID');
 
-  // Bill 2 should have 15,000 paid, 10,000 remaining, PARTIALLY_PAID
   assert.equal(bill2.paidAmount, 15000);
   assert.equal(bill2.remaining, 10000);
   assert.equal(bill2.paymentStatus, 'PARTIALLY_PAID');
@@ -271,8 +263,6 @@ test('Supplier Payment: Bill-specific allocation takes priority over older open 
 });
 
 test('Supplier Payment: Same-day purchase and payment order resolution', () => {
-  // If payment has midnight timestamp and purchase was recorded later same day,
-  // our sorting rules ensure purchase comes before payment so it allocates correctly.
   const txns = [
     { id: 'tx-purchase', type: 'purchase', amount: 30000, billNumber: 'BILL-SAME-DAY', createdAt: '2026-11-06T08:30:00Z', sequence: 10 },
     { id: 'tx-payment', type: 'payment', amount: 10000, billNumber: 'BILL-SAME-DAY', createdAt: '2026-11-06T00:00:00Z', sequence: 11 },
@@ -284,7 +274,72 @@ test('Supplier Payment: Same-day purchase and payment order resolution', () => {
   assert.equal(allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
 });
 
-// ─── 3. Dashboard Purchases Metrics: Date vs CreatedAt ──────────────────────
+test('Supplier Payment: Advance payment made before purchase settles against future bill', () => {
+  const txns = [
+    { id: 'tx-adv', type: 'payment', amount: 10000, note: 'Advance payment', createdAt: '2026-11-01T00:00:00Z', sequence: 1 },
+    { id: 'tx-pur', type: 'purchase', amount: 25000, billNumber: 'BILL-FUTURE', createdAt: '2026-11-05T00:00:00Z', sequence: 2 },
+  ];
+
+  const { allPurchases, totalOutstanding } = replaySupplierLedger(txns);
+  assert.equal(allPurchases[0].paidAmount, 10000);
+  assert.equal(allPurchases[0].remaining, 15000);
+  assert.equal(allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
+  assert.equal(totalOutstanding, 15000);
+});
+
+// ─── 3. Purchase Edit After Payment Integrity ───────────────────────────────
+
+test('Purchase Edit After Payment: Edit discount after partial payment preserves payments & updates remaining', () => {
+  // Step 1: Create purchase ₹50,000 with ₹5,000 discount (net ₹45,000)
+  const initialPurchase = computePurchaseTotals({
+    items: [{ quantity: 50, cost: 1000, gst: 0 }],
+    discount: 5000,
+  });
+  assert.equal(initialPurchase.totalCost, 45000);
+
+  // Supplier balance = ₹45,000
+  let supplierBalance = initialPurchase.totalCost;
+  const ledgerTxns = [
+    { id: 'pur-1', type: 'purchase', amount: 45000, billNumber: 'BILL-AUDIT-1', createdAt: '2026-11-01T10:00:00Z', sequence: 1 },
+  ];
+
+  // Step 2: Record ₹20,000 payment against this bill
+  const payment1 = { id: 'pay-1', type: 'payment', amount: 20000, billNumber: 'BILL-AUDIT-1', createdAt: '2026-11-02T10:00:00Z', sequence: 2 };
+  ledgerTxns.push(payment1);
+  supplierBalance -= payment1.amount; // 45,000 - 20,000 = 25,000
+  assert.equal(supplierBalance, 25000);
+
+  let state = replaySupplierLedger(ledgerTxns);
+  assert.equal(state.allPurchases[0].remaining, 25000);
+  assert.equal(state.allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
+
+  // Step 3: User edits purchase discount from ₹5,000 to ₹7,000 (net bill drops from ₹45,000 to ₹43,000)
+  const editedPurchase = computePurchaseTotals({
+    items: [{ quantity: 50, cost: 1000, gst: 0 }],
+    discount: 7000,
+  });
+  assert.equal(editedPurchase.totalCost, 43000);
+
+  // Reversal + reapply in supplier balance:
+  // Undo old bill (45,000), add new bill (43,000) -> net delta = -2,000
+  supplierBalance = supplierBalance - initialPurchase.totalCost + editedPurchase.totalCost;
+  assert.equal(supplierBalance, 23000); // 25,000 - 45,000 + 43,000 = 23,000
+
+  // Replace old purchase txn with edited purchase txn (old payment remains untouched)
+  const updatedLedgerTxns = [
+    { id: 'pur-1-edited', type: 'purchase', amount: 43000, billNumber: 'BILL-AUDIT-1', createdAt: '2026-11-01T10:00:00Z', sequence: 1 },
+    payment1, // payment is untouched!
+  ];
+
+  state = replaySupplierLedger(updatedLedgerTxns);
+  assert.equal(state.allPurchases[0].originalAmount, 43000);
+  assert.equal(state.allPurchases[0].paidAmount, 20000, 'Original payment must remain exactly ₹20,000');
+  assert.equal(state.allPurchases[0].remaining, 23000, 'Remaining must be exactly ₹23,000');
+  assert.equal(state.allPurchases[0].paymentStatus, 'PARTIALLY_PAID');
+  assert.equal(state.totalOutstanding, 23000);
+});
+
+// ─── 4. Dashboard Purchases Metrics: Date vs CreatedAt ──────────────────────
 
 function simulateDashboardPurchaseAggregation({ invoices, startDate, endDate, todayStart, todayEnd, monthStart }) {
   let todayAmount = 0;
@@ -299,7 +354,6 @@ function simulateDashboardPurchaseAggregation({ invoices, startDate, endDate, to
     const invDate = inv.date ? new Date(inv.date).getTime() : 0;
     const createdDate = inv.createdAt ? new Date(inv.createdAt).getTime() : 0;
 
-    // Condition: (date in range) OR (createdAt in range)
     const inToday = (invDate >= todayStart.getTime() && invDate <= todayEnd.getTime()) ||
                     (createdDate >= todayStart.getTime() && createdDate <= todayEnd.getTime());
     if (inToday) {
@@ -332,39 +386,24 @@ function simulateDashboardPurchaseAggregation({ invoices, startDate, endDate, to
   };
 }
 
-test('Dashboard: Bill entered today with historical vendor invoice date appears in Today Purchases', () => {
+test('Dashboard Matrix: All 4 date permutations correctly aggregated with zero double-counting', () => {
   const todayStart = new Date('2026-11-06T00:00:00.000Z');
   const todayEnd = new Date('2026-11-06T23:59:59.999Z');
   const monthStart = new Date('2026-11-01T00:00:00.000Z');
 
   const invoices = [
-    // Vendor invoice dated Sept 1, but entered into the system today Nov 6
-    {
-      id: 'inv-1',
-      invoiceNumber: '077',
-      totalCost: 365255,
-      date: '2026-09-01T00:00:00.000Z',
-      createdAt: '2026-11-06T07:00:30.293Z',
-    },
-    // Vendor invoice dated Sept 6, entered today Nov 6
-    {
-      id: 'inv-2',
-      invoiceNumber: '140',
-      totalCost: 949200,
-      date: '2026-09-06T00:00:00.000Z',
-      createdAt: '2026-11-06T06:46:37.208Z',
-    },
-    // Old invoice from last month, created last month
-    {
-      id: 'inv-3',
-      invoiceNumber: 'OLD-999',
-      totalCost: 50000,
-      date: '2026-10-15T00:00:00.000Z',
-      createdAt: '2026-10-15T10:00:00.000Z',
-    }
+    // 1. Old invoice date (Sept 1), today's creation date (Nov 6)
+    { id: 'inv-1', invoiceNumber: 'BILL-1', totalCost: 10000, date: '2026-09-01T00:00:00Z', createdAt: '2026-11-06T10:00:00Z' },
+    // 2. Today's invoice date (Nov 6), today's creation date (Nov 6)
+    { id: 'inv-2', invoiceNumber: 'BILL-2', totalCost: 20000, date: '2026-11-06T11:00:00Z', createdAt: '2026-11-06T11:00:00Z' },
+    // 3. Both dates within selected month (Nov 3 and Nov 4)
+    { id: 'inv-3', invoiceNumber: 'BILL-3', totalCost: 30000, date: '2026-11-03T00:00:00Z', createdAt: '2026-11-04T00:00:00Z' },
+    // 4. Old invoice date and old creation date (both Sept 1)
+    { id: 'inv-4', invoiceNumber: 'BILL-4', totalCost: 40000, date: '2026-09-01T00:00:00Z', createdAt: '2026-09-01T00:00:00Z' },
   ];
 
-  const result = simulateDashboardPurchaseAggregation({
+  // Daily Query (Today)
+  const todayResult = simulateDashboardPurchaseAggregation({
     invoices,
     startDate: todayStart,
     endDate: todayEnd,
@@ -373,40 +412,31 @@ test('Dashboard: Bill entered today with historical vendor invoice date appears 
     monthStart,
   });
 
-  // Today's purchases must reflect the two bills created today (365,255 + 949,200 = 1,314,455)
-  assert.equal(result.todayAmount, 1314455);
-  assert.equal(result.todayCount, 2);
+  // Expected today: BILL-1 (created today) + BILL-2 (dated & created today) = 10,000 + 20,000 = 30,000.
+  // BILL-2 is counted ONCE. BILL-3 and BILL-4 are NOT in today.
+  assert.equal(todayResult.todayAmount, 30000);
+  assert.equal(todayResult.todayCount, 2);
 
-  // Month purchases also includes them
-  assert.equal(result.monthAmount, 1314455);
-  assert.equal(result.monthCount, 2);
+  // Monthly Query (November)
+  // Expected month: BILL-1 (created in Nov) + BILL-2 (in Nov) + BILL-3 (in Nov) = 10,000 + 20,000 + 30,000 = 60,000.
+  // BILL-4 (Sept/Sept) is completely excluded.
+  assert.equal(todayResult.monthAmount, 60000);
+  assert.equal(todayResult.monthCount, 3);
 });
 
-test('Dashboard: Bill entered today with today invoice date is counted only ONCE', () => {
-  const todayStart = new Date('2026-11-06T00:00:00.000Z');
-  const todayEnd = new Date('2026-11-06T23:59:59.999Z');
-  const monthStart = new Date('2026-11-01T00:00:00.000Z');
+// ─── 5. Financial Precision & Rounding ──────────────────────────────────────
 
-  const invoices = [
-    {
-      id: 'inv-today',
-      invoiceNumber: 'PUR-TODAY',
-      totalCost: 50000,
-      date: '2026-11-06T12:00:00.000Z',
-      createdAt: '2026-11-06T12:00:00.000Z',
-    }
+test('Financial Precision: IEEE-754 floating point drift does not pollute totals', () => {
+  // Test scenario with 3 items of 33.33 each with 18% GST and fractional discounts
+  const items = [
+    { quantity: 3, cost: 33.3333, gst: 17.999 }, // subtotal ~ 100
+    { quantity: 7, cost: 14.2857, gst: 18.001 }, // subtotal ~ 100
   ];
-
-  const result = simulateDashboardPurchaseAggregation({
-    invoices,
-    startDate: todayStart,
-    endDate: todayEnd,
-    todayStart,
-    todayEnd,
-    monthStart,
-  });
-
-  assert.equal(result.todayAmount, 50000, 'Must not be double counted');
-  assert.equal(result.todayCount, 1);
+  const totals = computePurchaseTotals({ items, discount: 15.555, charges: 5.555 });
+  
+  // Verify that all returned values are clean 2-decimal numbers without trailing precision artifacts
+  assert.equal(Number.isInteger(totals.totalCost * 100), true, 'totalCost must have at most 2 decimal places');
+  assert.equal(Number.isInteger(totals.goodsTotal * 100), true, 'goodsTotal must have at most 2 decimal places');
+  assert.equal(Number.isInteger(totals.totalGst * 100), true, 'totalGst must have at most 2 decimal places');
+  assert.equal(totals.totalCost, round2(totals.goodsTotal + totals.totalGst + totals.chargesTotal - totals.discountAmt));
 });
-
