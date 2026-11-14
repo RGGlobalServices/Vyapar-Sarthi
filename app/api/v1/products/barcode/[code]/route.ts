@@ -3,6 +3,7 @@ import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
 import { startOfDay } from '@/lib/server/dates';
+import { deriveVariantFromCode, matchLegacyPlaceholder } from '@/lib/barcodeLookup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,16 +83,24 @@ export const GET = handle(async (req, ctx: any) => {
             AND p.archived IS NOT TRUE
             AND upper(btrim(e.value ->> 'barcode')) = ${needle}
           LIMIT 1`);
-    const [variantRows, hsnRows] = await Promise.all([
+    const [variantRows, hsnRows, variantProducts] = await Promise.all([
       variantLookup,
       prisma.product.findMany({
         where: { shopId: shop.id, hsnCode: { equals: barcode, mode: 'insensitive' }, ...notArchived },
         select: { id: true },
         take: 2,
       }),
+      // The shop's variant products only (a handful of lean rows, not the catalogue): a label printed as `<product code>-<size>`
+      // resolves even when that code was never saved, and old 'PRD-NEW-<size>' labels resolve when only one product has that size.
+      prisma.product.findMany({
+        where: { shopId: shop.id, productType: 'variant', ...notArchived },
+        select: { id: true, barcode: true, productType: true, size_variants: true, variants: true, metadata: true },
+      }),
     ]);
-    const id = variantRows[0]?.id ?? (hsnRows.length === 1 ? hsnRows[0].id : null);
+    const derived = variantRows[0] ? undefined : (deriveVariantFromCode(variantProducts, barcode) || matchLegacyPlaceholder(variantProducts, barcode));
+    const id = variantRows[0]?.id ?? derived?.product.id ?? (hsnRows.length === 1 ? hsnRows[0].id : null);
     if (variantRows[0]) matchedVariant = variantRows[0].key;
+    else if (derived) matchedVariant = derived.variantKey;
     if (id) product = await prisma.product.findFirst({ where: { id, shopId: shop.id }, include });
   }
 

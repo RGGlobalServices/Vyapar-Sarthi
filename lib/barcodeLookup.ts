@@ -52,6 +52,71 @@ export function matchVariantByCode<T extends { metadata?: any }>(products: T[], 
   return code ? variantCodeIndex(products).get(code) : undefined;
 }
 
+/** The part of a generated label code after the product code — same rule as generateVariantBarcodes (components/SizeVariantGrid). */
+export const variantSuffix = (key: string) => String(key ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** The product's variant keys in the form billing's addToCart expects: size_variants keys, then variants[], then keys that carry a saved barcode. */
+export function variantKeysOf(p: { size_variants?: any; variants?: any; metadata?: any }): string[] {
+  const keys: string[] = [];
+  const add = (k: string) => { if (k && !keys.includes(k)) keys.push(k); };
+  const sv = parseMeta(p?.size_variants);
+  if (sv && typeof sv === 'object') Object.keys(sv).forEach(add);
+  if (Array.isArray(p?.variants)) {
+    for (const v of p.variants) {
+      const color = v?.color ? String(v.color).trim() : '';
+      const size = v?.size ? String(v.size).trim() : '';
+      add(color && size ? `${color} / ${size}` : (size || color));
+    }
+  }
+  variantBarcodes(p).forEach(([k]) => add(k));
+  return keys;
+}
+
+type VariantProduct = { id?: any; barcode?: string | null; productType?: string | null; metadata?: any; size_variants?: any; variants?: any };
+
+/**
+ * A variant label whose code was generated as `<product code>-<variant>` ("PRD-4E5CD76B-24", "MSH-101-M") resolves to that exact
+ * size even when the code was never saved on the product (the label was printed but the save didn't reach the server, or the
+ * list is stale). Product codes are unique, so this cannot point at two products.
+ */
+export function deriveVariantFromCode<T extends VariantProduct>(products: T[], rawCode: string): VariantHit<T> | undefined {
+  const code = String(rawCode || '').trim().toUpperCase();
+  if (!code) return undefined;
+  for (const p of products) {
+    if (p.productType !== 'variant') continue;
+    const bases = new Set<string>();
+    const own = String(p.barcode ?? '').trim().toUpperCase();
+    if (own.length >= 4) bases.add(own);
+    if (p.id) bases.add(`PRD-${String(p.id).slice(0, 8).toUpperCase()}`);
+    for (const base of bases) {
+      if (!code.startsWith(base + '-')) continue;
+      const rest = code.slice(base.length + 1);
+      const key = variantKeysOf(p).find(k => variantSuffix(k) === rest);
+      if (key) return { product: p, variantKey: key };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Labels printed by the old Add form carry `PRD-NEW-<variant>` — the same code on every new product. They are honoured only when
+ * exactly ONE variant product has that variant, so a scan can never choose between two products.
+ */
+export function matchLegacyPlaceholder<T extends VariantProduct>(products: T[], rawCode: string): VariantHit<T> | undefined {
+  const m = /^PRD-NEW-(.+)$/i.exec(String(rawCode || '').trim());
+  if (!m) return undefined;
+  const suffix = m[1].toUpperCase();
+  let hit: VariantHit<T> | undefined;
+  for (const p of products) {
+    if (p.productType !== 'variant') continue;
+    const key = variantKeysOf(p).find(k => variantSuffix(k) === suffix);
+    if (!key) continue;
+    if (hit) return undefined;
+    hit = { product: p, variantKey: key };
+  }
+  return hit;
+}
+
 /** Substring match on the product's variant barcodes — for search boxes. `queryLower` must already be lower-case. */
 export function variantCodeContains(p: { metadata?: any }, queryLower: string): boolean {
   if (!queryLower) return false;
@@ -113,13 +178,13 @@ export function matchProductByCode<T extends Coded>(products: T[], rawCode: stri
  * code such as "PRD-4E5CD76B-24" contains its parent's barcode "PRD-4E5CD76B", so running the lenient rule first resolved
  * every variant scan to the bare parent product instead of the scanned size.
  */
-export function resolveScan<T extends Coded & { metadata?: any }>(products: T[], rawCode: string): { product: T; variantKey?: string } | undefined {
+export function resolveScan<T extends Coded & { metadata?: any; id?: any; productType?: string | null }>(products: T[], rawCode: string): { product: T; variantKey?: string } | undefined {
   const code = norm(rawCode);
   if (!code) return undefined;
   const exact = products.find(p => norm(p.barcode) === code || norm(p.sku) === code || norm(p.cartonBarcode) === code);
   if (exact) return { product: exact };
-  const variant = matchVariantByCode(products, rawCode);
-  if (variant) return variant;
+  const variant = matchVariantByCode(products, rawCode) || deriveVariantFromCode(products as any[], rawCode) || matchLegacyPlaceholder(products as any[], rawCode);
+  if (variant) return variant as { product: T; variantKey: string };
   const lenient = matchProductByCode(products, rawCode);
   return lenient ? { product: lenient } : undefined;
 }
