@@ -139,3 +139,22 @@ test('barcodeVariantMap: explicit variant product lists size_variants and varian
   assert.deepEqual(barcodeVariantMap({ productType: 'variant', size_variants: JSON.stringify({ S: 1, M: 0, L: 2 }) }), { S: 1, L: 2 });
   assert.deepEqual(barcodeVariantMap({ productType: 'variant', variants: [{ color: 'Red', size: 'M', stock: 3 }] }), { 'Red / M': 3 });
 });
+
+test('barcodeVariantMap: size_variants + variants[] describing the same sizes are not double counted', async () => {
+  const { barcodeVariantMap } = await import('../../lib/variants.ts');
+  const m = barcodeVariantMap({
+    productType: 'variant',
+    size_variants: JSON.stringify({ 24: 6, 26: 6 }),
+    variants: [{ size: '24', color: '', stock: 6 }, { size: '26', color: null, stock: 6 }],
+  });
+  assert.deepEqual(m, { 24: 6, 26: 6 });
+});
+
+test('isPlaceholderVariantBarcode: only the shared PRD-NEW base is a placeholder', async () => {
+  const { isPlaceholderVariantBarcode } = await import('../../lib/variants.ts');
+  assert.equal(isPlaceholderVariantBarcode('PRD-NEW-24'), true);
+  assert.equal(isPlaceholderVariantBarcode('prd-new'), true);
+  assert.equal(isPlaceholderVariantBarcode('PRD-4E5CD76B-24'), false);
+  assert.equal(isPlaceholderVariantBarcode('8901234567890'), false);
+  assert.equal(isPlaceholderVariantBarcode(undefined), false);
+});

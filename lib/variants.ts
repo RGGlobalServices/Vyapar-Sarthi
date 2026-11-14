@@ -302,27 +302,31 @@ export function variantLabel(key: string | null | undefined): string {
   return [color, size].map((s) => s.trim()).filter(Boolean).join(' / ');
 }
 
+/** Auto codes made before the product existed use the shared 'PRD-NEW' base, so they collide across products. */
+export const isPlaceholderVariantBarcode = (b: unknown) => /^PRD-NEW(-|$)/i.test(String(b ?? '').trim());
+
 /**
- * Per-variant qty map for barcode printing, keyed "Colour / Size". Only products explicitly
+ * Per-variant qty map for barcode printing, keyed 'Colour / Size'. Only products explicitly
  * saved as productType 'variant' have variants — leftover size_variants/variants[] data on a
- * single/loose/untyped product (imports, legacy rows) must not produce per-variant barcodes.
+ * single/loose product must not produce per-variant barcodes. variants[] is canonical;
+ * size_variants is only its legacy mirror, so it is used alone (never added on top, which doubled quantities).
  */
 export function barcodeVariantMap(product: any): Record<string, number> {
   const out: Record<string, number> = {};
   if (product?.productType !== 'variant') return out;
-  for (const [k, v] of Object.entries(parseSizeVariantsMap(product?.size_variants))) {
-    const n = Number(v);
-    if (n > 0) out[k] = (out[k] || 0) + n;
-  }
   if (Array.isArray(product?.variants)) {
     for (const v of product.variants as Array<Record<string, unknown>>) {
       const color = v.color ? String(v.color).trim() : '';
       const size = v.size ? String(v.size).trim() : '';
-      const key = color && size ? `${color} / ${size}` : (size || color || '');
+      const key = color && size ? makeVariantKey(color, size) : (size || color);
       if (!key) continue;
       const stock = Number(v.stock ?? v.quantity ?? 0);
       if (stock > 0) out[key] = (out[key] || 0) + stock;
     }
+  }
+  if (Object.keys(out).length > 0) return out;
+  for (const [k, v] of Object.entries(parseSizeVariantsMap(product?.size_variants))) {
+    if (Number(v) > 0) out[k] = Number(v);
   }
   return out;
 }

@@ -29,7 +29,7 @@ import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 
 import { QrCode } from 'lucide-react';
-import { variantsToSizeMap, cleanVariants } from '@/lib/variants';
+import { variantsToSizeMap, cleanVariants, isPlaceholderVariantBarcode } from '@/lib/variants';
 import LotReportModal from '@/components/products/LotReportModal';
 import NewLotModal from '@/components/products/NewLotModal';
 import SimpleVariantBuilder from '@/components/products/SimpleVariantBuilder';
@@ -821,7 +821,14 @@ function LegacyProductsUI() {
     // shopkeeper saw on screen for each variant's barcode is exactly what
     // gets persisted — no gap between the visible auto-code and what a
     // future scanner will match against.
-    let metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePricesEffective, Object.keys(sizePricesEffective).length > 0) : undefined;
+    // The product id doesn't exist yet, so the on-screen auto codes are based on the 'PRD-NEW' placeholder — identical for
+    // every new product. Don't save those; the Barcode modal generates unique ones from the real id on first open.
+    const sizePricesToSave = Object.fromEntries(Object.entries(sizePricesEffective).map(([k, e]: [string, any]) => {
+      if (!isPlaceholderVariantBarcode(e?.barcode)) return [k, e];
+      const { barcode: _auto, ...rest } = e;
+      return [k, rest];
+    }));
+    let metadataPayload = addVariantActive ? mergeSizePricesIntoMetadata({}, sizePricesToSave as any, Object.keys(sizePricesToSave).length > 0) : undefined;
     // Liquor: alcohol % & bottle type ride along in the metadata JSON (no schema change).
     if (bizConfig.hasLiquorSpecs && (form.alcohol_percentage || form.bottle_type)) {
       metadataPayload = { ...(metadataPayload || {}),

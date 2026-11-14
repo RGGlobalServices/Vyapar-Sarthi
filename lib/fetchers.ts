@@ -41,6 +41,7 @@ export function mapApiProductToRow(p: any) {
     shade: p.shade,
     size_variants: p.size_variants,
     variants: p.variants,
+    productType: p.productType,
     is_loose: p.is_loose,
     metadata: p.metadata,
     // The REAL stored barcode — without this the Barcode/QR modal shows an

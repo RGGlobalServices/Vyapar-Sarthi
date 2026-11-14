@@ -7,7 +7,7 @@ import api from '@/lib/api';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { detectBarcodeFormat } from '@/lib/barcode';
 import { printLabelSheet as printLabelSheetShared } from '@/lib/printLabels';
-import { barcodeVariantMap } from '@/lib/variants';
+import { barcodeVariantMap, isPlaceholderVariantBarcode } from '@/lib/variants';
 import { generateVariantBarcodes } from '@/components/SizeVariantGrid';
 import BarcodePrintSettings from '@/components/BarcodePrintSettings';
 import { resolveActiveProfile, PrinterProfile } from '@/lib/printProfiles';
@@ -56,6 +56,15 @@ function parseObj(v: any): Record<string, any> {
   if (!v) return {};
   if (typeof v === 'string') { try { return JSON.parse(v); } catch { return {}; } }
   return v;
+}
+
+/** size_prices with the shared 'PRD-NEW-…' placeholder codes dropped, so they regenerate unique per product. */
+function withoutPlaceholderBarcodes(sp: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, e] of Object.entries(sp)) {
+    if (e && isPlaceholderVariantBarcode(e.barcode)) { const { barcode: _drop, ...rest } = e; out[k] = rest; } else out[k] = e;
+  }
+  return out;
 }
 
 /** Collapse anything that isn't filesystem-safe (spaces, slashes in a
@@ -224,7 +233,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // hit this exact gap: Udyog products showed a single "PRD-XXX" code
     // for the whole product instead of one per colour/size row.
     const variants = barcodeVariantMap(product);
-    const existing = parseObj(parseObj(product.metadata).size_prices);
+    const existing = withoutPlaceholderBarcodes(parseObj(parseObj(product.metadata).size_prices));
 
     // For Udyog variants[], seed sellingPrice/mrp from the array row so
     // per-variant labels print the right price without the shopkeeper
@@ -269,7 +278,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   // and never fights a shopkeeper's own in-progress edits.
   useEffect(() => {
     const meta = parseObj(product.metadata);
-    const existing = parseObj(meta.size_prices);
+    const existing = withoutPlaceholderBarcodes(parseObj(meta.size_prices));
     const generatedSomething = Object.keys(ensuredSizePrices).some(k => !existing[k]?.barcode && ensuredSizePrices[k]?.barcode);
     if (!generatedSomething) return;
     api.put(`/products/${product.id}`, { metadata: { ...meta, size_prices: ensuredSizePrices } })
