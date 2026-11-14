@@ -690,6 +690,11 @@ function StandardBillingUI() {
     // nothing real to offer, just zero-stock tiles for sizes the shopkeeper
     // never intended to track. A product only needs this prompt when it has
     // genuine, distributed per-size/colour stock to choose between.
+    // Also skip for products explicitly typed 'single' or 'loose' — they may
+    // have leftover size_variants data from an old import or prior edit, but
+    // the shopkeeper set them as flat products and expects flat add behaviour.
+    const pt = (product as any).productType;
+    const isSingleOrLoose = pt === 'single' || pt === 'loose';
     let productVariants: Record<string, number> = {};
     try {
       productVariants = typeof product.size_variants === 'string'
@@ -697,7 +702,7 @@ function StandardBillingUI() {
         : (product.size_variants || {});
     } catch { productVariants = {}; }
     const variantEntries = Object.entries(productVariants).filter(([, v]) => Number(v) > 0);
-    if (!variant) {
+    if (!variant && !isSingleOrLoose) {
       if (variantEntries.length === 1) {
         // Exactly one variant in stock — skip the picker and add it directly.
         return addToCart(product, variantEntries[0][0], forceAdd, batchInfo);
