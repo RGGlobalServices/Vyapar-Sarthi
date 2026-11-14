@@ -15,6 +15,7 @@ import { applyVariantStockDeltas } from '@/lib/server/variantStock';
 import { invalidateDashboardCacheForShop } from '@/lib/server/dashboardCache';
 import { withTenantIdempotency } from '@/lib/server/idempotency';
 import { upsertHamali, upsertFreight } from '@/lib/server/purchaseExtrasWrite';
+import { parseCharges } from '@/lib/server/purchaseCharges';
 import { sendToNotPacked } from '@/lib/server/sendToNotPacked';
 
 
@@ -206,6 +207,8 @@ export async function POST(req: Request) {
       const codeBase = p?.barcode || p?.sku || item.productId.slice(0, 8);
       return { id: randomUUID(), barcode: `${codeBase}-B${seq}`, merge: false };
     });
+
+    const parsedCharges = parseCharges(data.charges);
 
     const idempotencyOutcome = await prisma.$transaction(async (tx) => {
       return await withTenantIdempotency(tx, {
