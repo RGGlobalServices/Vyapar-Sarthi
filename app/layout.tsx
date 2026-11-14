@@ -1,9 +1,19 @@
-import { Inter, Noto_Sans_Devanagari } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], display: 'swap' });
+// Self-hosted: next/font/google downloads from Google at build time, and that fetch fails on the Hostinger build server.
+const inter = localFont({ src: './fonts/Inter-latin-variable.woff2', weight: '100 900', display: 'swap', fallback: ['system-ui', 'sans-serif'] });
 // Sturdy Devanagari for Marathi/Hindi bills: the system fallback font is too thin to read on a thermal printer.
-const deva = Noto_Sans_Devanagari({ subsets: ['devanagari', 'latin'], weight: ['500', '600', '700'], display: 'swap', variable: '--font-deva' });
+// Two static files cover the weights the bills use (500 -> Regular, 600/700 -> Bold). Not preloaded: only invoices use it.
+const deva = localFont({
+  src: [
+    { path: '../public/fonts/NotoSansDevanagari-Regular.ttf', weight: '400 500', style: 'normal' },
+    { path: '../public/fonts/NotoSansDevanagari-Bold.ttf', weight: '600 700', style: 'normal' },
+  ],
+  display: 'swap',
+  variable: '--font-deva',
+  preload: false,
+});
 
 import { Metadata, Viewport } from 'next';
 
