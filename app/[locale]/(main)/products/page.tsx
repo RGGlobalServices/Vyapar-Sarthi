@@ -1048,7 +1048,12 @@ function LegacyProductsUI() {
       setEditSizeSelection(existingSizes);
     }
     setEditBaseVariants(parsedVariants);
-    const hasExistingVariants = (Object.keys(parsedVariants).length > 0 || (product as any).productType === 'variant') && (product as any).productType !== 'single';
+    // Only auto-enable variants when the product was explicitly saved as
+    // 'variant' by the user. A product that only has size_variants data from
+    // an import (or legacy migration) but productType===null/undefined should
+    // start edit with variants OFF — the user can enable them intentionally,
+    // and saving without enabling clears the orphaned size_variants data.
+    const hasExistingVariants = (product as any).productType === 'variant';
     setEditHasVariants(hasExistingVariants);
     setShowEditModal(true);
   }
