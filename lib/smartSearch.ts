@@ -1,3 +1,4 @@
+import { variantCodeContains } from './barcodeLookup';
 /**
  * Smart Search Utility for Kirana Store
  * Handles:
@@ -78,7 +79,8 @@ export function performSmartSearch(products: Product[], query: string): Product[
     (p.name || '').toLowerCase().includes(q) ||
     (p.barcode || '').toLowerCase().includes(q) ||
     (p.sku || '').toLowerCase().includes(q) ||
-    (p.category || '').toLowerCase().includes(q)
+    (p.category || '').toLowerCase().includes(q) ||
+    variantCodeContains(p as any, q)
   );
 
   if (directMatches.length > 5) return directMatches;

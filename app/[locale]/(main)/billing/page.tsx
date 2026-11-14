@@ -19,7 +19,7 @@ import {
   AlertCircle, CheckCircle, Zap, MessageCircle, Loader2, Smartphone, FileUp, Layers
 } from 'lucide-react';
 import api from '@/lib/api';
-import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
+import { useBarcodeScanner, playScanBeep, resolveScan } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
 // Camera scanner pulls in html5-qrcode and touches `window`, so it must stay
 // out of the server bundle and off the initial billing payload.
@@ -856,23 +856,13 @@ function StandardBillingUI() {
     setSearch('');
     searchInputRef.current?.focus();
 
-    // Fast path — product already in the loaded list, matched by any of its
-    // identifiers (barcode / SKU / carton barcode / unique HSN). No network hop.
-    const local = matchProductByCode(products, raw);
+    // Fast path — product already in the loaded list: its own barcode / SKU / carton barcode, then a per-variant barcode
+    // (drops the exact colour/size into the cart, not the base row), then unique HSN / lenient matches. No network hop.
+    const local = resolveScan(products, raw);
     if (local) {
-      addToCart(local);
+      addToCart(local.product, local.variantKey);
       playScanBeep(true);
-      setScanFeedback({ status: 'ok', text: local.name });
-      return;
-    }
-
-    // Per-variant barcode match (e.g. "BAR-1782-BLUE-M" dropped by a desktop
-    // scanner) — drops the exact colour/size into the cart, not the base row.
-    const variantHit = matchVariantByCode(products, raw);
-    if (variantHit) {
-      addToCart(variantHit.product, variantHit.variantKey);
-      playScanBeep(true);
-      setScanFeedback({ status: 'ok', text: `${variantHit.product.name} · ${variantHit.variantKey}` });
+      setScanFeedback({ status: 'ok', text: local.variantKey ? `${local.product.name} · ${local.variantKey}` : local.product.name });
       return;
     }
 

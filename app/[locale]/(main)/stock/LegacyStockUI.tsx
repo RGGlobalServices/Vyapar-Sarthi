@@ -29,6 +29,7 @@ import api from '@/lib/api';
 import { getBusinessConfig, getCategoryVariantSpec } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import { itemCodeMatches } from '@/lib/barcodeLookup';
 import dynamic from 'next/dynamic';
 
 const CameraScanner = dynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -199,7 +200,7 @@ export default function LegacyStockUI() {
     const c = (i.category || '').toLowerCase();
     return !i.archived &&
       (selectedCategory === 'All' || i.category === selectedCategory) &&
-      (n.includes(s) || c.includes(s));
+      (n.includes(s) || c.includes(s) || itemCodeMatches(i, s));
   }), [items, search, selectedCategory]);
 
   const archivedItems = useMemo(() => items.filter(i => {
@@ -208,7 +209,7 @@ export default function LegacyStockUI() {
     const c = (i.category || '').toLowerCase();
     return i.archived &&
       (selectedCategory === 'All' || i.category === selectedCategory) &&
-      (n.includes(s) || c.includes(s));
+      (n.includes(s) || c.includes(s) || itemCodeMatches(i, s));
   }), [items, search, selectedCategory]);
 
   // When All Shop Access is on, group the active-items table into one

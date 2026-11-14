@@ -28,6 +28,7 @@ import { getBusinessConfig, supportsLooseMaterial, getCategoryVariantSpec, resol
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
 import { makeBasis, inclusiveFromEntered, switchSpMode, type SpBasis } from '@/lib/priceGst';
+import { variantCodeContains } from '@/lib/barcodeLookup';
 
 import { QrCode } from 'lucide-react';
 import { variantsToSizeMap, cleanVariants, isPlaceholderVariantBarcode } from '@/lib/variants';
@@ -741,7 +742,8 @@ function LegacyProductsUI() {
     const matchSearch = !safeSearch || (
       searchTokens.every(t => safeName.includes(t)) ||
       safeCategory.includes(safeSearch) ||
-      safeBarcode.includes(safeSearch)
+      safeBarcode.includes(safeSearch) ||
+      variantCodeContains(p as any, safeSearch.trim())
     );
     const matchCat = !filterCategory || p.category === filterCategory;
     const isLow = p.stock <= p.minStock && p.stock > 0;

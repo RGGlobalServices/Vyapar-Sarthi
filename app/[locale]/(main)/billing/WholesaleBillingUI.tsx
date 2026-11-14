@@ -19,7 +19,7 @@ import api from '@/lib/api';
 import { withOfflineCache, isNetworkError, queueOfflineSale } from '@/lib/offlineCache';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { cn, fmtDate } from '@/lib/utils';
-import { useBarcodeScanner, playScanBeep, matchProductByCode, matchVariantByCode } from '@/lib/useBarcodeScanner';
+import { useBarcodeScanner, playScanBeep, resolveScan } from '@/lib/useBarcodeScanner';
 import nextDynamic from 'next/dynamic';
 // Keeps html5-qrcode out of the server bundle and off the initial payload.
 const CameraScanner = nextDynamic(() => import('@/components/CameraScanner'), { ssr: false });
@@ -1616,21 +1616,13 @@ export default function WholesaleBillingUI() {
     const raw = String(barcode).trim();
     const seq = ++scanSeqRef.current;
 
-    const local = matchProductByCode(products, raw);
+    // Product barcode / SKU / carton, then an exact per-variant barcode (drops that colour/size into the cart, not the
+    // base row), then unique HSN / lenient matches.
+    const local = resolveScan(products, raw);
     if (local) {
-      addToCart(local);
+      addToCart(local.product, local.variantKey);
       playScanBeep(true);
-      setScanFeedback({ status: 'ok', text: local.name });
-      return;
-    }
-
-    // Per-variant barcode match (e.g. a desktop-scanner code for one exact
-    // colour/size) — drops that variant into the cart, not the base row.
-    const variantHit = matchVariantByCode(products, raw);
-    if (variantHit) {
-      addToCart(variantHit.product, variantHit.variantKey);
-      playScanBeep(true);
-      setScanFeedback({ status: 'ok', text: `${variantHit.product.name} · ${variantHit.variantKey}` });
+      setScanFeedback({ status: 'ok', text: local.variantKey ? `${local.product.name} · ${local.variantKey}` : local.product.name });
       return;
     }
 

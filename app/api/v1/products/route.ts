@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/server/prisma';
 import { normalizeVariants } from '@/lib/variants';
 import { createOpeningLots } from '@/lib/server/lotCreate';
@@ -49,6 +50,23 @@ export const GET = handle(async (req) => {
       ? { AND: tokens.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) }
       : { name: { contains: q, mode: 'insensitive' as const } };
 
+    // A per-variant barcode (metadata.size_prices[<variant>].barcode) is a code a scanner/typist uses just like the product's own,
+    // but it is JSON, so it can't go through the Prisma filter below: one SQL lookup for the (few) parents that carry it.
+    let variantParentIds: string[] = [];
+    if (q.length >= 4 && !/\s/.test(q)) {
+      const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT DISTINCT p.id::text AS id
+        FROM products p
+        CROSS JOIN LATERAL jsonb_each(
+          CASE WHEN jsonb_typeof(p.metadata -> 'size_prices') = 'object' THEN p.metadata -> 'size_prices' ELSE '{}'::jsonb END
+        ) AS e
+        WHERE p.shop_id IN (${Prisma.join(shopIds.map((id: string) => Prisma.sql`${id}::uuid`))})
+          AND p.archived IS NOT TRUE
+          AND position(lower(${q}) in lower(coalesce(e.value ->> 'barcode', ''))) > 0
+        LIMIT 20`);
+      variantParentIds = rows.map(r => r.id);
+    }
+
     where.AND = [
       {
         OR: [
@@ -60,6 +78,7 @@ export const GET = handle(async (req) => {
           { sku: { contains: q, mode: 'insensitive' } },
           { cartonBarcode: { contains: q, mode: 'insensitive' } },
           { hsnCode: { contains: q, mode: 'insensitive' } },
+          ...(variantParentIds.length ? [{ id: { in: variantParentIds } }] : []),
         ]
       }
     ];

@@ -32,6 +32,7 @@ import { calculateProductProfit, profitColorClass, sellingPriceForMargin } from 
 import { formatMillStock, computeStockStatus, STOCK_STATUS_LABELS } from '@/lib/millStock';
 import CostMarkupControl from '@/components/CostMarkupControl';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import { variantCodeContains } from '@/lib/barcodeLookup';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import useSWR from 'swr';
 import dynamic from 'next/dynamic';
@@ -864,7 +865,8 @@ export default function WholesaleProductsUI() {
   let filteredProducts = products.filter((p: any) => {
     const matchesSearch = p.name?.toLowerCase().includes(search.toLowerCase()) ||
       p.barcode?.toLowerCase().includes(search.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(search.toLowerCase());
+      p.sku?.toLowerCase().includes(search.toLowerCase()) ||
+      variantCodeContains(p, search.trim().toLowerCase());
     if (!matchesSearch) return false;
     if (activeMillCategory && p.millCategory !== activeMillCategory) return false;
     if (!isMillShop) return true;

@@ -37,84 +37,8 @@ export interface BarcodeScannerOptions {
   allowTabSuffix?: boolean;
 }
 
-/**
- * Find a product in an already-loaded list by any scannable identifier.
- *
- * Tries the item's company barcode, then SKU, then carton barcode — all exact,
- * case-insensitive. HSN is only honoured when it resolves to a single product,
- * because an HSN code is a shared tax class and a multi-match must never guess
- * which product to bill. Returns undefined so the caller can fall back to the
- * server lookup (which covers products beyond the 2000-row list cap).
- */
-export function matchProductByCode<T extends {
-  barcode?: string | null; sku?: string | null; cartonBarcode?: string | null; hsnCode?: string | null;
-}>(products: T[], rawCode: string): T | undefined {
-  const code = String(rawCode || '').trim().toLowerCase();
-  if (!code) return undefined;
-  const norm = (v: string | null | undefined) => (v || '').trim().toLowerCase();
-  const eq = (v: string | null | undefined) => norm(v) === code;
-
-  const direct = products.find(p => eq(p.barcode) || eq(p.sku) || eq(p.cartonBarcode));
-  if (direct) return direct;
-
-  const hsnMatches = products.filter(p => eq(p.hsnCode));
-  if (hsnMatches.length === 1) return hsnMatches[0];
-
-  // A batch-specific scan code is always `<product code>-B<n>` (see
-  // purchases/route.ts) — that reserved shape must NOT be caught by the
-  // "code extends a known barcode" fallback below, or a batch scan silently
-  // resolves to the bare product (auto-FIFO) instead of falling through to
-  // the server lookup that can actually find and target the batch.
-  const looksLikeBatchSuffix = (base: string) => base.length >= 4 && new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-b\\d+$`).test(code);
-
-  // Lenient fallback — real-world barcodes often round-trip through the
-  // catalogue with an added prefix ("BAR-8909106067240") or padding, so strict
-  // equality misses a scan that visibly matches an existing product. Only
-  // used when the substring hit is UNIQUE, so the scanner never silently
-  // grabs the wrong item. Guarded by a 4-char minimum to avoid pathological
-  // matches on tiny SKUs. This mirrors the search dropdown's own substring
-  // behaviour so a barcode that pops up in search also gets found on scan.
-  if (code.length >= 4) {
-    const substringMatches = products.filter(p =>
-      (norm(p.barcode).includes(code)) ||
-      (norm(p.sku).includes(code)) ||
-      (norm(p.cartonBarcode).includes(code)) ||
-      (code.includes(norm(p.barcode)) && norm(p.barcode).length >= 4 && !looksLikeBatchSuffix(norm(p.barcode))) ||
-      (code.includes(norm(p.sku)) && norm(p.sku).length >= 4 && !looksLikeBatchSuffix(norm(p.sku))) ||
-      (code.includes(norm(p.cartonBarcode)) && norm(p.cartonBarcode).length >= 4 && !looksLikeBatchSuffix(norm(p.cartonBarcode)))
-    );
-    if (substringMatches.length === 1) return substringMatches[0];
-  }
-
-  return undefined;
-}
-
-/**
- * Per-variant barcode match. When a scan hits a colour/size variant code
- * stored under `metadata.size_prices[<variantKey>].barcode`, this returns
- * both the parent product and the variant key so the billing UI can drop
- * the exact variant into the cart (client requirement).
- *
- * Falls back to `undefined` on any miss; the caller then hits the server
- * lookup (which does the same scan across the full catalogue, not just the
- * loaded 2000-row window).
- */
-export function matchVariantByCode<T extends { metadata?: any }>(
-  products: T[],
-  rawCode: string,
-): { product: T; variantKey: string } | undefined {
-  const code = String(rawCode || '').trim().toUpperCase();
-  if (!code) return undefined;
-  for (const p of products) {
-    const meta = typeof p.metadata === 'string' ? (() => { try { return JSON.parse(p.metadata as any); } catch { return {}; } })() : (p.metadata || {});
-    const sp = meta?.size_prices || {};
-    for (const [variantKey, entry] of Object.entries<any>(sp)) {
-      const c = (entry?.barcode || '').toString().trim().toUpperCase();
-      if (c && c === code) return { product: p, variantKey };
-    }
-  }
-  return undefined;
-}
+// Code matching lives in a React-free module so it can be unit-tested and reused by the search boxes.
+export { matchProductByCode, matchVariantByCode, resolveScan } from './barcodeLookup';
 
 export function useBarcodeScanner({
   onScan,

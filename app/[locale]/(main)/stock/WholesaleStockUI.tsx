@@ -25,6 +25,7 @@ import { SelectionActionBar } from '@/components/trash/SelectionActionBar';
 import { cssColor } from '@/components/ColorSizeVariantGrid';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useBarcodeScanner, playScanBeep } from '@/lib/useBarcodeScanner';
+import { variantCodeContains } from '@/lib/barcodeLookup';
 import { getStockTableConfig, type StockColumn } from '@/lib/stockTableConfig';
 import dynamic from 'next/dynamic';
 
@@ -461,7 +462,7 @@ export default function WholesaleStockUI() {
 
 
   const filteredItems = (data?.items || []).filter((i: any) => {
-    const matchesSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(search.toLowerCase())) || (i.barcode && i.barcode.toLowerCase().includes(search.toLowerCase()));
+    const matchesSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(search.toLowerCase())) || (i.barcode && i.barcode.toLowerCase().includes(search.toLowerCase())) || variantCodeContains(i, search.trim().toLowerCase());
     const matchesCategory = categoryFilter === 'all' || i.category === categoryFilter;
     const matchesWarehouse = warehouseFilter === 'all' || i.computedStock > 0;
     const matchesBrand = brandFilter === 'all' || i.brand === brandFilter;

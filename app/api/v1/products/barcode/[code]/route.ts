@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json } from '@/lib/server/http';
@@ -37,57 +38,61 @@ export const GET = handle(async (req, ctx: any) => {
     _count: { select: { godownProducts: { where: { quantity: { gt: 0 } } } } },
   };
 
-  // Resolve in priority order so the most specific identifier wins: the item's
-  // own company barcode, then the shop's SKU, then the carton barcode. HSN is
-  // last and only accepted when it points at exactly ONE product — an HSN code
-  // is a tax class shared by many items, so a multi-match must not silently add
-  // the wrong product to a bill.
-  let product =
-    (await prisma.product.findFirst({
-      where: { shopId: shop.id, barcode: { equals: barcode, mode: 'insensitive' }, ...notArchived },
-      include,
-    })) ||
-    (await prisma.product.findFirst({
-      where: { shopId: shop.id, sku: { equals: barcode, mode: 'insensitive' }, ...notArchived },
-      include,
-    })) ||
-    (await prisma.product.findFirst({
-      where: { shopId: shop.id, cartonBarcode: { equals: barcode, mode: 'insensitive' }, ...notArchived },
-      include,
-    }));
+  // Few round trips matter more than anything else here: the billing screen gives up after 4s and reports "Not found", and every
+  // query is a network hop to the database. So: ONE query for the three exact identifiers (company barcode, SKU, carton
+  // barcode — most specific wins), and on a miss ONE SQL lookup into the per-variant barcodes (run alongside the HSN check).
+  // This used to be five sequential queries that ended by downloading the whole catalogue with its godown joins.
+  const lc = barcode.toLowerCase();
+  const exact = await prisma.product.findMany({
+    where: {
+      shopId: shop.id,
+      AND: [
+        notArchived,
+        { OR: [
+          { barcode: { equals: barcode, mode: 'insensitive' } },
+          { sku: { equals: barcode, mode: 'insensitive' } },
+          { cartonBarcode: { equals: barcode, mode: 'insensitive' } },
+        ] },
+      ],
+    },
+    include,
+    take: 6,
+  });
+  let product: any =
+    exact.find(p => (p.barcode || '').toLowerCase() === lc) ||
+    exact.find(p => (p.sku || '').toLowerCase() === lc) ||
+    exact.find(p => (p.cartonBarcode || '').toLowerCase() === lc) ||
+    null;
 
-  if (!product) {
-    const byHsn = await prisma.product.findMany({
-      where: { shopId: shop.id, hsnCode: { equals: barcode, mode: 'insensitive' }, ...notArchived },
-      include,
-      take: 2,
-    });
-    if (byHsn.length === 1) product = byHsn[0];
-  }
-
-  // Per-variant barcodes live in metadata.size_prices[<compositeKey>].barcode.
-  // Prisma can't filter into a nested JSON path portably, so on a miss we scan
-  // the parent products for a code match. Cheap: only fires when nothing else
-  // matched, and the shop's product count is bounded.
+  // Per-variant barcodes live in metadata.size_prices[<compositeKey>].barcode. The shared 'PRD-NEW-…' placeholder codes
+  // (older Add-form data) belong to many products at once, so they can never identify one. HSN is a tax class shared by many
+  // items, so it is only accepted when it points at exactly ONE product.
   let matchedVariant: string | null = null;
   if (!product) {
-    const candidates = await prisma.product.findMany({
-      where: { shopId: shop.id, ...notArchived },
-      include,
-    });
     const needle = barcode.toUpperCase();
-    outer: for (const p of candidates) {
-      const meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
-      const sp = (meta && meta.size_prices) || {};
-      for (const [variantKey, entry] of Object.entries<any>(sp)) {
-        const code = (entry?.barcode || '').toString().trim().toUpperCase();
-        if (code && code === needle) {
-          product = p as any;
-          matchedVariant = variantKey;
-          break outer;
-        }
-      }
-    }
+    const variantLookup = /^PRD-NEW(-|$)/i.test(barcode)
+      ? Promise.resolve([] as Array<{ id: string; key: string }>)
+      : prisma.$queryRaw<Array<{ id: string; key: string }>>(Prisma.sql`
+          SELECT p.id::text AS id, e.key AS key
+          FROM products p
+          CROSS JOIN LATERAL jsonb_each(
+            CASE WHEN jsonb_typeof(p.metadata -> 'size_prices') = 'object' THEN p.metadata -> 'size_prices' ELSE '{}'::jsonb END
+          ) AS e
+          WHERE p.shop_id = ${shop.id}::uuid
+            AND p.archived IS NOT TRUE
+            AND upper(btrim(e.value ->> 'barcode')) = ${needle}
+          LIMIT 1`);
+    const [variantRows, hsnRows] = await Promise.all([
+      variantLookup,
+      prisma.product.findMany({
+        where: { shopId: shop.id, hsnCode: { equals: barcode, mode: 'insensitive' }, ...notArchived },
+        select: { id: true },
+        take: 2,
+      }),
+    ]);
+    const id = variantRows[0]?.id ?? (hsnRows.length === 1 ? hsnRows[0].id : null);
+    if (variantRows[0]) matchedVariant = variantRows[0].key;
+    if (id) product = await prisma.product.findFirst({ where: { id, shopId: shop.id }, include });
   }
 
   // Batch-specific scan code (e.g. "PROD101-B1", printed per-lot from the

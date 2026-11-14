@@ -7,6 +7,7 @@ import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 
 import { useBusinessStore } from '@/lib/businessStore';
+import { variantCodeContains } from '@/lib/barcodeLookup';
 import { getBusinessConfig } from '@/lib/businessConfig';
 import { isMillBillingPackage } from '@/lib/config/packageConfig';
 const fetcher = (url: string | string[]) => {
@@ -101,7 +102,8 @@ export default function ReceiveDrawer({
     ? productList.filter((p: any) =>
         p.name?.toLowerCase().includes(productSearch.toLowerCase()) ||
         p.barcode?.toLowerCase().includes(productSearch.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(productSearch.toLowerCase()))
+        p.sku?.toLowerCase().includes(productSearch.toLowerCase()) ||
+        variantCodeContains(p, productSearch.trim().toLowerCase()))
     : productList;
 
   const selectProduct = (p: any) => {
