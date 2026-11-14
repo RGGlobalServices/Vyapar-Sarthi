@@ -1865,6 +1865,7 @@ export default function LegacyStockUI() {
             stock: qrItem.current,
             size_variants: qrItem.size_variants || undefined,
             metadata: qrItem.metadata,
+            productType: (qrItem as any).productType,
           }}
           onClose={() => setQrItem(null)}
         />

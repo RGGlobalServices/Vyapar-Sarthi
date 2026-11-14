@@ -578,6 +578,7 @@ export interface StockItem {
   gender?: string | null;
   shade?: string | null;
   size_variants?: string | null;
+  productType?: string | null;
   metadata?: any;
   barcode?: string | null;
   cartonBarcode?: string | null;
@@ -682,6 +683,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
         gender: p.gender || null,
         shade: p.shade || null,
         size_variants: p.size_variants || null,
+        productType: p.productType ?? null,
         metadata: p.metadata ?? null,
         barcode: p.barcode || null,
         cartonBarcode: p.cartonBarcode || null,
@@ -746,6 +748,7 @@ export const useStockStore = create<StockStore>((set, get) => ({
       gender: item.gender || null,
       shade: item.shade || null,
       size_variants: item.size_variants || null,
+      productType: item.size_variants ? 'variant' : 'single',
       metadata: item.metadata ?? null,
       // New product's opening stock is entirely "newly added" → show +N instantly.
       recentlyAdded: Number(item.current) > 0 ? Number(item.current) : 0,

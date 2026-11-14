@@ -124,3 +124,18 @@ test('variantLabel and variantAvailable', () => {
   assert.equal(variantAvailable(p, 'Blue / S'), 9);
   assert.equal(variantAvailable(p, 'Green / L'), null);
 });
+
+test('barcodeVariantMap: leftover size_variants on a non-variant product gives no variant barcodes', async () => {
+  const { barcodeVariantMap } = await import('../../lib/variants.ts');
+  const sv = JSON.stringify({ S: 1, M: 2 });
+  assert.deepEqual(barcodeVariantMap({ productType: 'single', size_variants: sv }), {});
+  assert.deepEqual(barcodeVariantMap({ productType: 'loose', size_variants: sv }), {});
+  assert.deepEqual(barcodeVariantMap({ productType: null, size_variants: sv }), {});
+  assert.deepEqual(barcodeVariantMap({ size_variants: sv, variants: [{ color: 'Red', size: 'M', stock: 3 }] }), {});
+});
+
+test('barcodeVariantMap: explicit variant product lists size_variants and variants[]', async () => {
+  const { barcodeVariantMap } = await import('../../lib/variants.ts');
+  assert.deepEqual(barcodeVariantMap({ productType: 'variant', size_variants: JSON.stringify({ S: 1, M: 0, L: 2 }) }), { S: 1, L: 2 });
+  assert.deepEqual(barcodeVariantMap({ productType: 'variant', variants: [{ color: 'Red', size: 'M', stock: 3 }] }), { 'Red / M': 3 });
+});

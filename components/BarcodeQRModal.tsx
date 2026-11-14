@@ -7,6 +7,7 @@ import api from '@/lib/api';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { detectBarcodeFormat } from '@/lib/barcode';
 import { printLabelSheet as printLabelSheetShared } from '@/lib/printLabels';
+import { barcodeVariantMap } from '@/lib/variants';
 import { generateVariantBarcodes } from '@/components/SizeVariantGrid';
 import BarcodePrintSettings from '@/components/BarcodePrintSettings';
 import { resolveActiveProfile, PrinterProfile } from '@/lib/printProfiles';
@@ -37,11 +38,13 @@ interface BarcodeQRModalProps {
     /** Composite variant key → qty. Keys look like "Blue / 8GB / 128GB". */
     size_variants?: string | Record<string, number>;
     /** Udyog per-colour/size rows: [{color, size, stock, sellingPrice, mrp, ...}].
-     *  Bridged with size_variants above by unifyVariantMap() so this modal
+     *  Bridged with size_variants above by barcodeVariantMap() so this modal
      *  can enumerate variants regardless of which package the shop uses. */
     variants?: Array<Record<string, unknown>>;
     /** Metadata carries per-variant pricing + barcodes under `size_prices`. */
     metadata?: any;
+    /** 'variant' | 'single' | 'loose' — per-variant barcodes only for 'variant'. */
+    productType?: string | null;
   };
   /** Shows the Udyog-only Carton/Box bulk-label tab. */
   isWholesale?: boolean;
@@ -53,36 +56,6 @@ function parseObj(v: any): Record<string, any> {
   if (!v) return {};
   if (typeof v === 'string') { try { return JSON.parse(v); } catch { return {}; } }
   return v;
-}
-
-/**
- * Unified per-variant qty map, keyed by the same `"Colour / Size"` composite
- * everything else in the system uses. Bridges Vyapar/Dukan's
- * `size_variants` JSON (`{"M": 4, "L": 2}`) with Udyog's `variants[]` array
- * (`[{color:"Black", size:"UK 6", stock:5, ...}]`) so this modal shows
- * per-variant barcodes regardless of package. Was reading only
- * `size_variants` before — Udyog products fell straight through to the
- * plain single-code Barcode tab, which is exactly what the client called
- * out ("varient wise barcode also want, same as Vyapar").
- */
-function unifyVariantMap(product: any): Record<string, number> {
-  const out: Record<string, number> = {};
-  const sv = parseObj(product?.size_variants);
-  for (const [k, v] of Object.entries(sv)) {
-    const n = Number(v);
-    if (n > 0) out[k] = (out[k] || 0) + n;
-  }
-  if (Array.isArray(product?.variants)) {
-    for (const v of product.variants as Array<Record<string, unknown>>) {
-      const color = v.color ? String(v.color).trim() : '';
-      const size = v.size ? String(v.size).trim() : '';
-      const key = color && size ? `${color} / ${size}` : (size || color || '');
-      if (!key) continue;
-      const stock = Number(v.stock ?? v.quantity ?? 0);
-      if (stock > 0) out[key] = (out[key] || 0) + stock;
-    }
-  }
-  return out;
 }
 
 /** Collapse anything that isn't filesystem-safe (spaces, slashes in a
@@ -125,7 +98,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // Check BOTH the retail-style size_variants JSON AND Udyog's variants[]
     // array — either shape means this product has variant stock worth its
     // own set of per-colour/size barcodes.
-    const hasVariants = Object.keys(unifyVariantMap(product)).length > 0;
+    const hasVariants = Object.keys(barcodeVariantMap(product)).length > 0;
     return hasVariants ? 'variants' : 'barcode';
   });
   const [copied, setCopied] = useState(false);
@@ -250,7 +223,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // Udyog's variants[] array feed the barcode generator — the client
     // hit this exact gap: Udyog products showed a single "PRD-XXX" code
     // for the whole product instead of one per colour/size row.
-    const variants = unifyVariantMap(product);
+    const variants = barcodeVariantMap(product);
     const existing = parseObj(parseObj(product.metadata).size_prices);
 
     // For Udyog variants[], seed sellingPrice/mrp from the array row so
@@ -323,7 +296,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
   }
 
   const variantRows = useMemo(() => {
-    const variants = unifyVariantMap(product);
+    const variants = barcodeVariantMap(product);
     return Object.keys(variants)
       .filter(k => Number(variants[k]) > 0)
       .map(k => {

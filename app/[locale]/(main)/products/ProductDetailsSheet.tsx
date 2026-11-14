@@ -76,6 +76,9 @@ export default function ProductDetailsSheet({
   // Build a displayProduct from the fast list row so the header and stat
   // cards render immediately, even before erp-details finishes loading.
   const displayProduct = data?.product ?? (initialProduct ? {
+    id: initialProduct.id ?? productId,
+    productType: initialProduct.productType,
+    variants: initialProduct.variants,
     name: initialProduct.name,
     barcode: initialProduct.barcode,
     sku: initialProduct.sku,
