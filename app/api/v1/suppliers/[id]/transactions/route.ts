@@ -440,7 +440,7 @@ export const POST = handle(async (req, ctx: any) => {
           ...(hasPartPayment ? { paidAmount } : {}),
         },
       },
-    }).catch(() => {});
+    }).catch(() => { });
 
     return { transaction: created, remaining: Number(updated.balance) || 0 };
   });

@@ -232,27 +232,27 @@ export async function PATCH(req: Request, { params }: Ctx) {
         }),
         finalAmountPaid > 0
           ? tx.supplierTransaction.create({
-              data: {
-                supplierId,
-                type: 'payment',
-                amount: finalAmountPaid,
-                billNumber: invoiceNumber || null,
-                note: `Payment for Purchase Invoice: ${invoiceNumber || id}`,
-                paymentMethod: finalPaymentMode,
-                createdAt: date ? new Date(date) : new Date(),
-              },
-            })
+            data: {
+              supplierId,
+              type: 'payment',
+              amount: finalAmountPaid,
+              billNumber: invoiceNumber || null,
+              note: `Payment for Purchase Invoice: ${invoiceNumber || id}`,
+              paymentMethod: finalPaymentMode,
+              createdAt: date ? new Date(date) : new Date(),
+            },
+          })
           : null,
         finalAmountPaid > 0 && finalPaymentMode.toLowerCase() === 'cash'
           ? tx.cashBook.create({
-              data: {
-                shopId: auth!.shop.id,
-                type: 'purchase',
-                amount: finalAmountPaid,
-                referenceId: id,
-                description: `Payment for Purchase Invoice: ${invoiceNumber || id}`,
-              },
-            })
+            data: {
+              shopId: auth!.shop.id,
+              type: 'purchase',
+              amount: finalAmountPaid,
+              referenceId: id,
+              description: `Payment for Purchase Invoice: ${invoiceNumber || id}`,
+            },
+          })
           : null,
         tx.activityLog.create({
           data: {
