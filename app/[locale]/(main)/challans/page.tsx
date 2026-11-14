@@ -1112,7 +1112,7 @@ function NewChallanModal({ onClose, onCreated, preloadSaleId }: { onClose: () =>
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
                           <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('ratePerUnit', { unit: it.unit })}</label>
-                          <input type="number" min="0" value={it.price || ''} onChange={e => updateItem(idx, { price: Number(e.target.value) || 0 })} className={cellCls} />
+                          <input type="number" step="any" min="0" value={it.price || ''} onChange={e => updateItem(idx, { price: Number(e.target.value) || 0 })} className={cellCls} />
                         </div>
                         <div className="flex-1 text-right">
                           <label className="block text-[9px] font-black uppercase text-slate-400 mb-0.5">{tc('itemTotal')}</label>

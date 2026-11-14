@@ -2526,22 +2526,22 @@ export default function WholesaleProductsUI() {
                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Cost</label>
-                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                          <input type="number" step="any" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
                                             value={expandedRow.costPrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'costPrice', parseFloat(e.target.value) || 0)} />
                                         </div>
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Wholesale</label>
-                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                          <input type="number" step="any" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
                                             value={expandedRow.wholesalePrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'wholesalePrice', parseFloat(e.target.value) || 0)} />
                                         </div>
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Retail</label>
-                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                          <input type="number" step="any" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
                                             value={expandedRow.sellingPrice || ''} onChange={e => updateVariantCellField(color, expandedSize, 'sellingPrice', parseFloat(e.target.value) || 0)} />
                                         </div>
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">MRP</label>
-                                          <input type="number" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
+                                          <input type="number" step="any" min="0" className="w-full px-2 py-1.5 border rounded-md text-[11px] text-center bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-amber-500"
                                             value={expandedRow.mrp || ''} onChange={e => updateVariantCellField(color, expandedSize, 'mrp', parseFloat(e.target.value) || 0)} />
                                         </div>
                                       </div>
@@ -2801,7 +2801,7 @@ export default function WholesaleProductsUI() {
                           {/* MRP first — anchors both Cost and Wholesale disc %s. */}
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                            <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                               value={form.mrp || ''} onChange={e => setForm({ ...form, mrp: parseFloat(e.target.value) || 0 })} />
                           </div>
                           <div>
@@ -2820,12 +2820,12 @@ export default function WholesaleProductsUI() {
                             </div>
                             {form.costPriceMode === 'mrp_based' ? (
                               <>
-                                <input type="number" min={0} max={100} placeholder="Disc %" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                <input type="number" step="any" min={0} max={100} placeholder="Disc %" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                   value={form.purchaseDiscountPercent ?? ''} onChange={e => setForm({ ...form, purchaseDiscountPercent: parseFloat(e.target.value) || 0 })} />
                                 <p className="text-[9px] text-amber-600 dark:text-amber-400 font-bold mt-1">= ₹{effectiveCostPrice(form).toFixed(2)}</p>
                               </>
                             ) : (
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                 value={form.costPrice || ''} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
                             )}
                           </div>
@@ -2853,7 +2853,7 @@ export default function WholesaleProductsUI() {
                             </div>
                             {wholesaleMode === 'mrp_based' ? (
                               <>
-                                <input type="number" min={0} max={100} placeholder="Party Disc %"
+                                <input type="number" step="any" min={0} max={100} placeholder="Party Disc %"
                                   className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                   value={wholesaleDiscountPercent}
                                   onChange={e => {
@@ -2867,13 +2867,13 @@ export default function WholesaleProductsUI() {
                                 <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">= ₹{(Number(form.wholesaleCost) || 0).toFixed(2)}</p>
                               </>
                             ) : (
-                              <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                              <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                 value={form.wholesaleCost || ''} onChange={e => setForm({ ...form, wholesaleCost: parseFloat(e.target.value) || 0 })} />
                             )}
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
-                            <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                            <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                               value={form.sellingPrice || ''} onChange={e => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })} />
                           </div>
                         </div>
@@ -2987,12 +2987,12 @@ export default function WholesaleProductsUI() {
                                     both derive from MRP. */}
                                 <div className="w-24">
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                  <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={v.mrp || ''} onChange={e => { const nv = [...variants]; nv[i].mrp = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                 </div>
                                 <div className="w-24">
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
-                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                  <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={v.costPrice || ''} onChange={e => { const nv = [...variants]; nv[i].costPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                 </div>
                                 <div className="w-24">
@@ -3014,7 +3014,7 @@ export default function WholesaleProductsUI() {
                                   </div>
                                   {v.wsMode === 'mrp_based' ? (
                                     <>
-                                      <input type="number" min={0} max={100} placeholder="Disc %"
+                                      <input type="number" step="any" min={0} max={100} placeholder="Disc %"
                                         className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                         value={v.wholesaleDiscPercent ?? ''}
                                         onChange={e => {
@@ -3029,13 +3029,13 @@ export default function WholesaleProductsUI() {
                                       <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 truncate">= ₹{(Number(v.wholesalePrice) || 0).toFixed(2)}</p>
                                     </>
                                   ) : (
-                                    <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                    <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                       value={v.wholesalePrice || ''} onChange={e => { const nv = [...variants]; nv[i].wholesalePrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                   )}
                                 </div>
                                 <div className="w-24">
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
-                                  <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                  <input type="number" step="any" className="w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={v.sellingPrice || ''} onChange={e => { const nv = [...variants]; nv[i].sellingPrice = parseFloat(e.target.value) || 0; setVariants(nv); }} />
                                 </div>
                               </>

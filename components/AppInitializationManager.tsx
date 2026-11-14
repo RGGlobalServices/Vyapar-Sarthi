@@ -14,6 +14,17 @@ export default function AppInitializationManager() {
   const pathname = usePathname();
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
+  // A focused number input changes by ±1 when the mouse wheel scrolls over it, silently altering prices/quantities while the
+  // user is just scrolling the form. Blur it first so the wheel scrolls the page instead.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement && el.type === 'number' && el === e.target) el.blur();
+    };
+    document.addEventListener('wheel', onWheel, { passive: true });
+    return () => document.removeEventListener('wheel', onWheel);
+  }, []);
+
   // --- 1. BACK BUTTON NAVIGATION ---
   useEffect(() => {
     let unlisten: any = null;

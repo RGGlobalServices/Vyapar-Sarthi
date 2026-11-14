@@ -1020,7 +1020,7 @@ export default function ReturnsPage() {
                                 </button>
                               </div>
                               <input
-                                type="number" min={0}
+                                type="number" step="any" min={0}
                                 value={line.price}
                                 onChange={e => updateExchangeLine(line.key, { price: Math.max(0, parseFloat(e.target.value) || 0) })}
                                 className="w-20 text-center text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1 py-1 text-slate-900 dark:text-slate-100"
@@ -1085,7 +1085,7 @@ export default function ReturnsPage() {
                           <div className="flex items-center gap-1">
                             <span className="text-slate-400">₹</span>
                             <input
-                              type="number" min={0}
+                              type="number" step="any" min={0}
                               value={exchangeDiscount || ''}
                               onChange={e => setExchangeDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
                               placeholder="0"

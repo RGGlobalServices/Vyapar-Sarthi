@@ -125,7 +125,8 @@ export function LocalInput({ value, onCommit, type = 'text', placeholder, classN
       type={type}
       min={min}
       max={max}
-      step={step}
+      // Browser default step=1 rejects paise (₹739.50) on Save and snaps arrow keys to whole rupees.
+      step={step ?? (type === 'number' ? 'any' : undefined)}
       list={list}
       required={required}
       autoFocus={autoFocus}

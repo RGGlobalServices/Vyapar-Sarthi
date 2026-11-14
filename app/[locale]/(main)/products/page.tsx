@@ -27,6 +27,7 @@ import { isWholesaleTierPackage } from '@/lib/config/packageConfig';
 import { getBusinessConfig, supportsLooseMaterial, getCategoryVariantSpec, resolveClothingSizeChart, FootwearSizeSystem } from '@/lib/businessConfig';
 import { useCategories } from '@/lib/useCategories';
 import { calculateProductProfit, profitColorClass, toInclusivePrice, toExclusivePrice } from '@/lib/profitCalc';
+import { makeBasis, inclusiveFromEntered, switchSpMode, type SpBasis } from '@/lib/priceGst';
 
 import { QrCode } from 'lucide-react';
 import { variantsToSizeMap, cleanVariants, isPlaceholderVariantBarcode } from '@/lib/variants';
@@ -280,10 +281,12 @@ function LegacyProductsUI() {
   // null = neither picked yet — starts unselected, price is saved exactly as
   // typed, and nothing changes until the shopkeeper explicitly clicks one.
   const [spMode, setSpMode] = useState<'inclusive' | 'exclusive' | null>(null);
+  const spBasisRef = useRef<SpBasis | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState(buildEmptyForm(profile.businessType));
   const [editSpMode, setEditSpMode] = useState<'inclusive' | 'exclusive' | null>(null);
+  const editSpBasisRef = useRef<SpBasis | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string | number>>(new Set());
@@ -838,8 +841,7 @@ function LegacyProductsUI() {
     // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
     // Selling Price is always saved GST-inclusive regardless of which mode the
     // shopkeeper typed it in (see the Including/Excluding GST toggle below).
-    const enteredSp = Number(form.sellingPrice) || 0;
-    const normalizedSellingPrice = spMode === 'exclusive' ? toInclusivePrice(enteredSp, Number(form.gstPercent) || 0) : enteredSp;
+    const normalizedSellingPrice = inclusiveFromEntered(form.sellingPrice, Number(form.gstPercent) || 0, spMode, spBasisRef.current);
     try {
       const res = await api.post('/products', {
         name: form.name, category: form.category,
@@ -904,7 +906,7 @@ function LegacyProductsUI() {
       }
       toast.success('Product added');
       setForm(buildEmptyForm(profile.businessType));
-      setSpMode(null);
+      setSpMode(null); spBasisRef.current = null;
       setAddToGodownId('');
       setPerSizePricing(false);
       setSizePrices({});
@@ -960,7 +962,11 @@ function LegacyProductsUI() {
     // a genuine tri-state: true/false only when the shopkeeper actually
     // picked one before; null (never chosen) must stay unselected here too,
     // not silently default to "Excluding".
-    setEditSpMode(product.gstInclusive === true ? 'inclusive' : product.gstInclusive === false ? 'exclusive' : null);
+    const loadedSpMode = product.gstInclusive === true ? 'inclusive' : product.gstInclusive === false ? 'exclusive' : null;
+    setEditSpMode(loadedSpMode);
+    // sellingPrice is stored GST-inclusive; in Excluding mode the box must show the base price, or saving re-applies GST.
+    const editSpBasis = makeBasis(Number(product.sellingPrice) || 0, Number(product.gstPercent) || 0, loadedSpMode);
+    editSpBasisRef.current = editSpBasis;
     // Resolve size variants early so both setEditForm and the colour/size
     // pickers below can reference the same value. Primary: size_variants JSON
     // string (manually edited via Edit Product). Fallback: variants[] array
@@ -989,7 +995,7 @@ function LegacyProductsUI() {
       stock: String(product.stock ?? ''),
       minStock: String(product.minStock ?? ''),
       mrp: String(product.mrp || ''),
-      sellingPrice: String(product.sellingPrice || ''),
+      sellingPrice: editSpBasis.display,
       cost: String(product.cost || ''),
       is_loose: product.is_loose || false,
       expiry_date: product.expiry_date || '',
@@ -1123,8 +1129,7 @@ function LegacyProductsUI() {
       // Per-size pricing → default price is forced to 0; billing/table use the per-size prices.
       // Selling Price is always saved GST-inclusive regardless of which mode the
       // shopkeeper typed it in (see the Including/Excluding GST toggle below).
-      const enteredEditSp = Number(editForm.sellingPrice) || 0;
-      const normalizedEditSellingPrice = editSpMode === 'exclusive' ? toInclusivePrice(enteredEditSp, Number(editForm.gstPercent) || 0) : enteredEditSp;
+      const normalizedEditSellingPrice = inclusiveFromEntered(editForm.sellingPrice, Number(editForm.gstPercent) || 0, editSpMode, editSpBasisRef.current);
       const res = await api.put(`/products/${editProduct.id}`, {
         name: editForm.name,
         category: editForm.category,
@@ -2665,12 +2670,12 @@ function LegacyProductsUI() {
                           // from — the price as typed simply becomes that mode's.
                           if (editSpMode !== null) {
                             const gst = Number(editForm.gstPercent) || 0;
-                            const current = Number(editForm.sellingPrice) || 0;
-                            if (current > 0) {
-                              const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
-                              setEditForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                            if (Number(editForm.sellingPrice) > 0) {
+                              const sw = switchSpMode(editForm.sellingPrice, gst, editSpMode, mode, editSpBasisRef.current);
+                              editSpBasisRef.current = sw.basis;
+                              setEditForm(f => ({ ...f, sellingPrice: sw.display }));
                             }
-                          }
+                          } else editSpBasisRef.current = null;
                           setEditSpMode(mode);
                         }}
                         className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',
@@ -3210,12 +3215,12 @@ function LegacyProductsUI() {
                           // from — the price as typed simply becomes that mode's.
                           if (spMode !== null) {
                             const gst = Number(form.gstPercent) || 0;
-                            const current = Number(form.sellingPrice) || 0;
-                            if (current > 0) {
-                              const converted = mode === 'exclusive' ? toExclusivePrice(current, gst) : toInclusivePrice(current, gst);
-                              setForm(f => ({ ...f, sellingPrice: String(Math.round(converted * 100) / 100) }));
+                            if (Number(form.sellingPrice) > 0) {
+                              const sw = switchSpMode(form.sellingPrice, gst, spMode, mode, spBasisRef.current);
+                              spBasisRef.current = sw.basis;
+                              setForm(f => ({ ...f, sellingPrice: sw.display }));
                             }
-                          }
+                          } else spBasisRef.current = null;
                           setSpMode(mode);
                         }}
                         className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',

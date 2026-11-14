@@ -1698,21 +1698,21 @@ export default function LegacyStockUI() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
                     <label className="block text-[10px] text-slate-500 font-medium">MRP (₹)</label>
-                    <input type="number" className={inp + ' border-transparent focus:border-emerald-500/50'} 
+                    <input type="number" step="any" className={inp + ' border-transparent focus:border-emerald-500/50'} 
                       placeholder={!isNew && selectedItem ? String(selectedItem.mrp) : "0"} 
                       value={isNew ? newForm.mrp : pricing.mrp} 
                       onChange={e => isNew ? setNewForm(f => ({...f, mrp: e.target.value})) : setPricing(p => ({...p, mrp: e.target.value}))} />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-[10px] text-slate-500 font-medium">Selling (₹)</label>
-                    <input type="number" className={inp + ' border-transparent focus:border-emerald-500/50'} 
+                    <input type="number" step="any" className={inp + ' border-transparent focus:border-emerald-500/50'} 
                       placeholder={!isNew && selectedItem ? String(selectedItem.sellingPrice) : "0"} 
                       value={isNew ? newForm.selling : pricing.selling} 
                       onChange={e => isNew ? setNewForm(f => ({...f, selling: e.target.value})) : setPricing(p => ({...p, selling: e.target.value}))} />
                   </div>
                   <div className="space-y-1">
                     <label className="block text-[10px] text-slate-500 font-medium">Cost (₹)</label>
-                    <input type="number" className={inp + ' border-transparent focus:border-emerald-500/50'} 
+                    <input type="number" step="any" className={inp + ' border-transparent focus:border-emerald-500/50'} 
                       placeholder={!isNew && selectedItem ? String(selectedItem.cost) : "0"} 
                       value={isNew ? newForm.cost : pricing.cost} 
                       onChange={e => isNew ? setNewForm(f => ({...f, cost: e.target.value})) : setPricing(p => ({...p, cost: e.target.value}))} />

@@ -94,19 +94,19 @@ export default function DynamicVariantBuilder({ schema, variants, onChange, same
             <>
               <div className="w-24 shrink-0">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">MRP</label>
-                <input type="number" className={inputCls} value={v.mrp || ''} onChange={e => update(i, { mrp: parseFloat(e.target.value) || 0 })} />
+                <input type="number" step="any" className={inputCls} value={v.mrp || ''} onChange={e => update(i, { mrp: parseFloat(e.target.value) || 0 })} />
               </div>
               <div className="w-24 shrink-0">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost</label>
-                <input type="number" className={inputCls} value={v.costPrice || ''} onChange={e => update(i, { costPrice: parseFloat(e.target.value) || 0 })} />
+                <input type="number" step="any" className={inputCls} value={v.costPrice || ''} onChange={e => update(i, { costPrice: parseFloat(e.target.value) || 0 })} />
               </div>
               <div className="w-24 shrink-0">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Wholesale</label>
-                <input type="number" className={inputCls} value={v.wholesalePrice || ''} onChange={e => update(i, { wholesalePrice: parseFloat(e.target.value) || 0 })} />
+                <input type="number" step="any" className={inputCls} value={v.wholesalePrice || ''} onChange={e => update(i, { wholesalePrice: parseFloat(e.target.value) || 0 })} />
               </div>
               <div className="w-24 shrink-0">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Retail</label>
-                <input type="number" className={inputCls} value={v.sellingPrice || ''} onChange={e => update(i, { sellingPrice: parseFloat(e.target.value) || 0 })} />
+                <input type="number" step="any" className={inputCls} value={v.sellingPrice || ''} onChange={e => update(i, { sellingPrice: parseFloat(e.target.value) || 0 })} />
               </div>
             </>
           )}

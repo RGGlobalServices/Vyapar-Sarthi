@@ -978,7 +978,7 @@ export default function RetailImport() {
                   headers={['Customer', 'Amount', 'Date', 'Note']}
                   rows={apiResult.khata.map((k: ImportedKhataEntry, idx: number) => [
                     <input key={`k-name-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.customerName} onChange={e => handleEditResult('khata', idx, 'customerName', e.target.value)} />,
-                    <input key={`k-amt-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-orange-400" value={k.amount || ''} onChange={e => handleEditResult('khata', idx, 'amount', Number(e.target.value))} />,
+                    <input key={`k-amt-${idx}`} type="number" step="any" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-orange-400" value={k.amount || ''} onChange={e => handleEditResult('khata', idx, 'amount', Number(e.target.value))} />,
                     <input key={`k-date-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.date || ''} onChange={e => handleEditResult('khata', idx, 'date', e.target.value)} />,
                     <input key={`k-note-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={k.note || ''} onChange={e => handleEditResult('khata', idx, 'note', e.target.value)} />,
                   ])}
@@ -1002,7 +1002,7 @@ export default function RetailImport() {
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('markupValueLabel') || 'Amount'}</label>
                     <input
-                      type="number" inputMode="decimal" value={markupValue}
+                      type="number" step="any" inputMode="decimal" value={markupValue}
                       onChange={e => setMarkupValue(e.target.value)}
                       placeholder={markupMode === 'percent' ? '10' : '5'}
                       className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
@@ -1067,7 +1067,7 @@ export default function RetailImport() {
                     </div>
                     <div>
                       <input
-                        type="number" inputMode="decimal" value={rowAdjustValue}
+                        type="number" step="any" inputMode="decimal" value={rowAdjustValue}
                         onChange={e => setRowAdjustValue(e.target.value)}
                         placeholder={rowAdjustMode === 'percent' ? '10' : '5'}
                         className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1105,7 +1105,7 @@ export default function RetailImport() {
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">{t('gstPercentLabel') || 'GST %'}</label>
                       <input
-                        type="number" inputMode="decimal" min={0} value={gstApplyValue}
+                        type="number" step="any" inputMode="decimal" min={0} value={gstApplyValue}
                         onChange={e => setGstApplyValue(e.target.value)}
                         placeholder="18"
                         className="w-24 h-9 px-2 rounded-lg text-sm font-semibold text-center border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-sky-500"
@@ -1138,10 +1138,10 @@ export default function RetailImport() {
                     <input key={`s-cat-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-24" value={s.category || ''} onChange={e => handleEditResult('stock', idx, 'category', e.target.value)} />,
                     <input key={`s-qty-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.quantity || ''} onChange={e => handleEditResult('stock', idx, 'quantity', Number(e.target.value))} />,
                     <input key={`s-unit-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16" value={s.unit || ''} onChange={e => handleEditResult('stock', idx, 'unit', e.target.value)} />,
-                    <input key={`s-cost-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.wholesaleCost || ''} onChange={e => handleEditResult('stock', idx, 'wholesaleCost', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-cost-${idx}`} type="number" step="any" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.wholesaleCost || ''} onChange={e => handleEditResult('stock', idx, 'wholesaleCost', Number(e.target.value))} placeholder="₹0" />,
                     <input key={`s-gst-${idx}`} type="number" min={0} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-16 text-sky-500" value={s.gstPercent || ''} onChange={e => handleEditResult('stock', idx, 'gstPercent', Number(e.target.value))} placeholder="0" title="Never applied automatically — this is only what prints on the invoice / feeds profit math." />,
-                    <input key={`s-mrp-${idx}`} type="number" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'mrp', Number(e.target.value))} placeholder="₹0" />,
-                    <input key={`s-sell-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingPrice || (!s.sellingPrice && !s.mrp) ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.sellingPrice || s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'sellingPrice', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-mrp-${idx}`} type="number" step="any" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-20 text-slate-500" value={s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'mrp', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`s-sell-${idx}`} type="number" step="any" className={`bg-white dark:bg-slate-900 border ${s.missingPrice || (!s.sellingPrice && !s.mrp) ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-20 text-emerald-400`} value={s.sellingPrice || s.mrp || ''} onChange={e => handleEditResult('stock', idx, 'sellingPrice', Number(e.target.value))} placeholder="₹0" />,
                     <input key={`s-exp-${idx}`} type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-32" value={s.expiryDate || ''} onChange={e => handleEditResult('stock', idx, 'expiryDate', e.target.value)} />,
                   ])}
                   align={['left','left','left','right','left','right','right','right','right','left']}
@@ -1160,7 +1160,7 @@ export default function RetailImport() {
                       <div className="flex gap-4 mb-4">
                         <input className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-3 py-1.5 text-sm flex-1 font-bold" value={p.vendorName || ''} onChange={e => handleEditResult('purchase', idx, 'vendorName', e.target.value)} placeholder="Vendor Name" />
                         <input type="date" className={`bg-white dark:bg-slate-900 border ${p.missingDate || !p.billDate ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-3 py-1.5 text-sm w-40`} value={p.billDate || ''} onChange={e => handleEditResult('purchase', idx, 'billDate', e.target.value)} />
-                        <input type="number" className={`bg-white dark:bg-slate-900 border ${p.missingAmount || !finalTotal ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-3 py-1.5 text-sm w-32 font-bold text-emerald-500`} value={finalTotal} onChange={e => handleEditResult('purchase', idx, 'totalAmount', Number(e.target.value))} placeholder="Total ₹0" />
+                        <input type="number" step="any" className={`bg-white dark:bg-slate-900 border ${p.missingAmount || !finalTotal ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-3 py-1.5 text-sm w-32 font-bold text-emerald-500`} value={finalTotal} onChange={e => handleEditResult('purchase', idx, 'totalAmount', Number(e.target.value))} placeholder="Total ₹0" />
                       </div>
                       
                       {p.items && p.items.length > 0 && (
@@ -1233,7 +1233,7 @@ export default function RetailImport() {
                       <span className="text-slate-400 text-xs hidden sm:inline px-1">to</span>
                       <input type="date" className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-full" value={s.endDate || ''} onChange={e => handleEditResult('sales', idx, 'endDate', e.target.value)} title="Optional: Set an end date to distribute sales across days" />
                     </div>,
-                    <input key={`sa-amt-${idx}`} type="number" className={`bg-white dark:bg-slate-900 border ${s.missingAmount || !s.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-24 text-blue-400 font-bold`} value={s.totalAmount || ''} onChange={e => handleEditResult('sales', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
+                    <input key={`sa-amt-${idx}`} type="number" step="any" className={`bg-white dark:bg-slate-900 border ${s.missingAmount || !s.totalAmount ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300 dark:border-slate-700'} rounded px-2 py-1 text-sm w-24 text-blue-400 font-bold`} value={s.totalAmount || ''} onChange={e => handleEditResult('sales', idx, 'totalAmount', Number(e.target.value))} placeholder="₹0" />,
                     <select key={`sa-pay-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-sm w-24" value={s.paymentMethod || ''} onChange={e => handleEditResult('sales', idx, 'paymentMethod', e.target.value)}>
                       <option value="">Unknown</option>
                       <option value="Cash">Cash</option>
