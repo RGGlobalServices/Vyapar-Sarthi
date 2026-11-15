@@ -1626,17 +1626,9 @@ export default function WholesaleBillingUI() {
       return;
     }
 
-    // A non-empty list below the 2000-row cap is the whole catalogue, so a local
-    // miss is genuinely "not found" — answer instantly. An empty list is still
-    // loading, so fall through to the (bounded) server lookup instead.
-    if (products.length > 0 && products.length < 2000) {
-      playScanBeep(false);
-      setScanFeedback({ status: 'error', text: `Not found: ${raw}` });
-      setUnknownBarcode(raw);
-      return;
-    }
-
-    // Large catalogue: look up, but bound the wait so the counter never hangs.
+    // A local miss is NOT proof the code doesn't exist: this screen loads its product list once, so a variant (or its barcode)
+    // saved in the product section after billing was opened isn't in it. Ask the server (a couple of fast queries), bounded so
+    // the counter never hangs.
     setScanFeedback({ status: 'pending', text: `Looking up ${raw}…` });
     try {
       const ac = new AbortController();
@@ -1646,6 +1638,8 @@ export default function WholesaleBillingUI() {
       if (seq !== scanSeqRef.current) return; // superseded by a newer scan
       const found = res.data;
       if (found?.id) {
+        // Remember it (replacing a stale copy) so the next scan of this product is local and instant.
+        setProducts(prev => prev.some(p => p.id === found.id) ? prev.map(p => (p.id === found.id ? { ...p, ...found } : p)) : [...prev, found]);
         addToCart(found, found.matched_variant || undefined);
         playScanBeep(true);
         setScanFeedback({ status: 'ok', text: found.matched_variant ? `${found.name} · ${found.matched_variant}` : found.name });

@@ -7,7 +7,7 @@ import api from '@/lib/api';
 import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { detectBarcodeFormat } from '@/lib/barcode';
 import { printLabelSheet as printLabelSheetShared } from '@/lib/printLabels';
-import { barcodeVariantMap, isPlaceholderVariantBarcode } from '@/lib/variants';
+import { barcodeVariantMap, isPlaceholderVariantBarcode, variantKeyOf } from '@/lib/variants';
 import { generateVariantBarcodes } from '@/components/SizeVariantGrid';
 import BarcodePrintSettings from '@/components/BarcodePrintSettings';
 import { resolveActiveProfile, PrinterProfile } from '@/lib/printProfiles';
@@ -242,9 +242,7 @@ export default function BarcodeQRModal({ product, isWholesale, onClose }: Barcod
     // own edit is never overwritten.
     if (Array.isArray(product?.variants)) {
       for (const v of product.variants as Array<Record<string, unknown>>) {
-        const color = v?.color ? String(v.color).trim() : '';
-        const size = v?.size ? String(v.size).trim() : '';
-        const key = color && size ? `${color} / ${size}` : (size || color || '');
+        const key = variantKeyOf(v as { color?: string | null; size?: string | null });
         if (!key) continue;
         existing[key] = existing[key] || {};
         if (!existing[key].sellingPrice && v?.sellingPrice != null) existing[key].sellingPrice = Number(v.sellingPrice);

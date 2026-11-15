@@ -3985,6 +3985,7 @@
     "successDesc": "Our support team will get back to you shortly."
   },
   "ProductDetails": {
+    "barcode": "Barcode",
     "loading": "Loading…",
     "noSku": "No SKU",
     "edit": "Edit",

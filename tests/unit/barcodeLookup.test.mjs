@@ -73,7 +73,7 @@ test('itemCodeMatches: product barcode, SKU, carton and variant codes (Retail St
   assert.equal(itemCodeMatches({ barcode: null, sku: undefined, metadata: undefined }, 'abc'), false);
 });
 
-import { deriveVariantFromCode, matchLegacyPlaceholder, variantKeysOf, variantSuffix } from '../../lib/barcodeLookup.ts';
+import { deriveVariantFromCode, matchLegacyPlaceholder, variantKeysOf, variantSuffix, ensureVariantBarcodes, variantCodeBase, savedVariantBarcode, variantRowKey } from '../../lib/barcodeLookup.ts';
 
 const cordV = { id: '4e5cd76b-b8b4-47c5-9f9d-bd78f133456c', name: 'CORD', barcode: 'PRD-4E5CD76B', productType: 'variant', size_variants: '{"24":6,"26":6}', variants: [{ size: '24', stock: 6 }, { size: '26', stock: 6 }], metadata: {} };
 const masti = { id: '3e120b93-0000-4000-8000-000000000000', name: 'MASTI', barcode: null, productType: 'variant', size_variants: null, variants: [{ color: 'Plain', size: '16', stock: 2 }, { color: 'Plain', size: '18', stock: 2 }], metadata: {} };
@@ -88,7 +88,7 @@ test('variantSuffix matches the generator rule', () => {
 test('variantKeysOf: size_variants, variants[] and saved keys, no duplicates', () => {
   assert.deepEqual(variantKeysOf(cordV), ['24', '26']);
   assert.deepEqual(variantKeysOf(masti), ['Plain / 16', 'Plain / 18']);
-  assert.deepEqual(variantKeysOf({ variants: [{ color: 'Red', stock: 1 }] }), ['Red']);
+  assert.deepEqual(variantKeysOf({ variants: [{ color: 'Red', stock: 1 }] }), ['Red / ']);      // same key billing builds
 });
 
 test('a label code that was never saved still resolves to its exact size (product barcode or PRD-<id8> base)', () => {
@@ -113,4 +113,45 @@ test('resolveScan uses derived + legacy matching before the lenient parent fallb
   assert.deepEqual(resolveScan([cordV], 'PRD-4E5CD76B-24'), { product: cordV, variantKey: '24' });
   assert.deepEqual(resolveScan([cordV, masti], 'PRD-NEW-PLAIN-18'), { product: masti, variantKey: 'Plain / 18' });
   assert.deepEqual(resolveScan([cordV], 'PRD-4E5CD76B'), { product: cordV });          // bare parent code still resolves to the product
+});
+
+test('variantRowKey / variantCodeBase follow billing and the Barcode screen', () => {
+  assert.equal(variantRowKey({ color: 'Black', size: 'M' }), 'Black / M');
+  assert.equal(variantRowKey({ color: '', size: '24' }), '24');
+  assert.equal(variantCodeBase({ id: '4e5cd76b-b8b4-47c5', barcode: 'BAR-1792861407805' }), 'PRD-4E5CD76B');   // auto placeholder -> PRD-<id8>
+  assert.equal(variantCodeBase({ id: '4e5cd76b-b8b4-47c5', barcode: 'prd-4e5cd76b' }), 'PRD-4E5CD76B');
+  assert.equal(variantCodeBase({ id: 'x', barcode: 'msh 101' }), 'MSH101');                                  // real barcode: uppercased, sanitised
+  assert.equal(variantCodeBase({ id: 'x', barcode: 'MSH-101' }), 'MSH-101');
+});
+
+test('ensureVariantBarcodes: every variant gets a code, saved in the row AND in size_prices (metadata kept)', () => {
+  const out = ensureVariantBarcodes({
+    id: '4e5cd76b-b8b4-47c5', barcode: null,
+    variants: [{ color: 'Black', size: 'S', stock: 2 }, { color: 'Black', size: 'M', stock: 3 }, { color: '', size: 'XL', stock: 1 }],
+    metadata: { fabric: 'Cotton', size_prices: { 'Black / S': { sellingPrice: 100, mrp: 150 }, S: { sellingPrice: 100 } } },
+  });
+  assert.deepEqual(out.variants.map(v => v.barcode), ['PRD-4E5CD76B-BLACK-S', 'PRD-4E5CD76B-BLACK-M', 'PRD-4E5CD76B-XL']);
+  assert.equal(out.metadata.fabric, 'Cotton');
+  assert.deepEqual(out.metadata.size_prices['Black / S'], { sellingPrice: 100, mrp: 150, barcode: 'PRD-4E5CD76B-BLACK-S' });  // price kept
+  assert.equal(out.metadata.size_prices['Black / M'].barcode, 'PRD-4E5CD76B-BLACK-M');
+  assert.equal(out.metadata.size_prices.S.barcode, undefined);                                                              // bare-size price entry untouched
+  assert.equal(out.changed, true);
+  for (const v of out.variants) assert.equal(savedVariantBarcode(out, v), v.barcode);
+});
+
+test('ensureVariantBarcodes never changes a saved or already-printed code, and is idempotent', () => {
+  const first = ensureVariantBarcodes({ id: 'aaaaaaaa-1', barcode: null, variants: [{ size: '24', stock: 1 }, { size: '26', stock: 1 }], metadata: { size_prices: { 26: { barcode: 'CUSTOM-26' } } } });
+  assert.deepEqual(first.variants.map(v => v.barcode), ['PRD-AAAAAAAA-24', 'CUSTOM-26']);                 // typed code kept
+  const again = ensureVariantBarcodes({ id: 'aaaaaaaa-1', barcode: null, variants: first.variants, metadata: first.metadata });
+  assert.equal(again.changed, false);
+  // an edit that sends rows WITHOUT barcodes (the grid rebuilds rows) keeps what the product had before
+  const edited = ensureVariantBarcodes({ id: 'aaaaaaaa-1', barcode: null, variants: [{ size: '24', stock: 5 }, { size: '26', stock: 5 }, { size: '28', stock: 5 }], metadata: {}, previous: { variants: first.variants, metadata: first.metadata } });
+  assert.deepEqual(edited.variants.map(v => v.barcode), ['PRD-AAAAAAAA-24', 'CUSTOM-26', 'PRD-AAAAAAAA-28']);
+});
+
+test('ensureVariantBarcodes replaces shared PRD-NEW placeholders and avoids duplicate codes', () => {
+  const out = ensureVariantBarcodes({ id: 'bbbbbbbb-1', barcode: 'MSH-101', variants: [{ size: 'S' }, { size: 's' }], metadata: { size_prices: { S: { barcode: 'PRD-NEW-S' } } } });
+  assert.equal(out.variants[0].barcode, 'MSH-101-S');
+  assert.equal(out.variants[1].barcode, 'MSH-101-S-2');                                                     // same suffix -> unique within the product
+  assert.deepEqual(ensureVariantBarcodes({ id: 'c', variants: [] }).variants, []);
 });

@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/prisma';
 import { normalizeVariants } from '@/lib/variants';
+import { ensureVariantBarcodes } from '@/lib/barcodeLookup';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { recordDeletion } from '@/lib/server/trash';
@@ -100,6 +101,17 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       ? reqType
       : (isVariantProduct && nv.hasVariants ? 'variant' : (reqType || product.productType || 'single'));
 
+    // Keep every variant's barcode saved with the product (row + metadata.size_prices); a code already saved or printed is never changed.
+    const withCodes = isVariantProduct && nv.hasVariants
+      ? ensureVariantBarcodes({
+          id: product.id,
+          barcode: b.barcode !== undefined ? b.barcode : product.barcode,
+          variants: nv.variants,
+          metadata: b.metadata !== undefined ? b.metadata : product.metadata,
+          previous: { variants: product.variants, metadata: product.metadata },
+        })
+      : null;
+
     const updateData = {
       name: b.name,
       category: b.category,
@@ -126,8 +138,8 @@ export const PUT = handle<Ctx>(async (req, { params }) => {
       gender: b.gender,
       shade: b.shade,
       size_variants: isExplicitSingleOrLoose ? null : (isVariantProduct && nv.hasVariants ? nv.sizeVariantsJson : (clearingVariants ? null : undefined)),
-      metadata: b.metadata !== undefined ? b.metadata : undefined,
-      variants: isExplicitSingleOrLoose ? [] : (isVariantProduct && nv.hasVariants ? (nv.variants as any) : (clearingVariants ? [] : undefined)),
+      metadata: withCodes && (b.metadata !== undefined || withCodes.changed) ? withCodes.metadata : (b.metadata !== undefined ? b.metadata : undefined),
+      variants: isExplicitSingleOrLoose ? [] : (isVariantProduct && nv.hasVariants ? ((withCodes ? withCodes.variants : nv.variants) as any) : (clearingVariants ? [] : undefined)),
       brand: b.brand,
       hsnCode: b.hsnCode ?? b.hsn_code,
       productType: resolvedProductType,

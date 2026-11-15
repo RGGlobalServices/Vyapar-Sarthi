@@ -5,6 +5,8 @@ import { createOpeningLots } from '@/lib/server/lotCreate';
 import { requireShop, requireShopScope } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
 import { startOfDay } from '@/lib/server/dates';
+import { randomUUID } from 'crypto';
+import { ensureVariantBarcodes } from '@/lib/barcodeLookup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -183,9 +185,16 @@ export const POST = handle(async (req) => {
   const uuidOrNull = (v: any) => (v === '' ? null : v);
   // One consistent write of the three variant stores (variants[], size_variants, currentStock).
   const nv = normalizeVariants({ variants: b.variants, sizeVariants: b.size_variants ?? b.sizeVariants });
+  // Every variant is saved WITH its own barcode (row + metadata.size_prices), so the product section, the sticker print and the
+  // billing scan all read the same code. The id is chosen here because the codes are built from it (PRD-<id8>-<variant>).
+  const newId = randomUUID();
+  const withCodes = nv.hasVariants
+    ? ensureVariantBarcodes({ id: newId, barcode: b.barcode, variants: nv.variants, metadata: b.metadata })
+    : null;
   try {
     const product = await prisma.product.create({
       data: {
+        id: newId,
         shopId: shop.id,
         name: b.name,
         category: b.category,
@@ -213,8 +222,8 @@ export const POST = handle(async (req) => {
         gender: b.gender,
         shade: b.shade,
         size_variants: nv.hasVariants ? nv.sizeVariantsJson : (b.size_variants ?? b.sizeVariants),
-        metadata: b.metadata,
-        variants: nv.hasVariants ? (nv.variants as any) : b.variants,
+        metadata: withCodes ? withCodes.metadata : b.metadata,
+        variants: withCodes ? (withCodes.variants as any) : b.variants,
         brand: b.brand,
         hsnCode: b.hsnCode ?? b.hsn_code,
         productType: nv.hasVariants && (!(b.productType ?? b.product_type) || (b.productType ?? b.product_type) === 'single') ? 'variant' : (b.productType ?? b.product_type),

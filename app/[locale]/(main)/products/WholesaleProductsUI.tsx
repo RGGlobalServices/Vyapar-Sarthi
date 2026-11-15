@@ -2982,6 +2982,12 @@ export default function WholesaleProductsUI() {
                                 </div>
                               )}
                             </div>
+                            <div className="w-40 shrink-0">
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Barcode</label>
+                              <input className="w-full px-3 py-2 border rounded-lg text-sm font-mono bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white shadow-sm outline-none focus:ring-1 focus:ring-emerald-500"
+                                value={v.barcode || ''} onChange={e => { const nv = [...variants]; nv[i].barcode = e.target.value.trim(); setVariants(nv); }}
+                                placeholder="Auto on save" title="Printed on this variant's sticker and scanned in billing. Leave blank to auto-generate; a code already printed is never changed." />
+                            </div>
                             {!sameVariantPricing && (
                               <>
                                 {/* MRP first — same reasoning as everywhere

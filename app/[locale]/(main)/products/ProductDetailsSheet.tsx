@@ -18,6 +18,7 @@ import { invalidateProductCaches } from '@/lib/swrInvalidate';
 import { calculateProductProfit, profitColorClass } from '@/lib/profitCalc';
 import { ConfirmPasswordModal } from '@/components/trash/ConfirmPasswordModal';
 import BarcodeQRModal from '@/components/BarcodeQRModal';
+import { savedVariantBarcode, variantCodeBase, variantSuffix, variantRowKey } from '@/lib/barcodeLookup';
 import { cssColor, splitVariantKey } from '@/components/ColorSizeVariantGrid';
 import { parseSizeVariants, parseSizePrices } from '@/components/SizeVariantGrid';
 
@@ -507,13 +508,14 @@ export default function ProductDetailsSheet({
                     }
                   >
                     <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                      <table className="w-full text-sm text-left min-w-[420px]">
+                      <table className="w-full text-sm text-left min-w-[560px]">
                         <thead>
                           <tr className="text-xs uppercase text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 sticky top-0">
                             <th className="px-4 py-2.5 font-semibold">{isLiquor ? 'ML' : (t("colourLabel") || 'Colour')}</th>
                             <th className="px-4 py-2.5 font-semibold">{isLiquor ? (t('typeLabel') || 'Type') : (t("sizeLabel") || 'Size')}</th>
                             <th className="px-4 py-2.5 font-semibold text-right">{t("qty")}</th>
                             <th className="px-4 py-2.5 font-semibold text-right">{t("sellingPrice")}</th>
+                            <th className="px-4 py-2.5 font-semibold">{t("barcode")}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -540,12 +542,19 @@ export default function ProductDetailsSheet({
                                 <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold">{v.size || '—'}</td>
                                 <td className={cn("px-4 py-3 text-right font-mono font-bold", stock <= 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400')}>{stock}</td>
                                 <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">{v.sellingPrice ? `₹${Number(v.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
+                                {(() => {
+                                  // The code saved for this variant — or, if none is saved yet, the one the sticker print and the
+                                  // billing scan will use (same rule, so what you see here is what prints and scans).
+                                  const saved = savedVariantBarcode(displayProduct, v);
+                                  const code = saved || `${variantCodeBase(displayProduct)}-${variantSuffix(variantRowKey(v))}`;
+                                  return <td className={cn("px-4 py-3 font-mono text-xs whitespace-nowrap", saved ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400')}>{code}</td>;
+                                })()}
                               </tr>
                             );
                           })}
                           {variantTotal === 0 && (Number(displayTotalStock) || 0) > 0 && (
                             <tr>
-                              <td colSpan={4} className="px-3 pb-2 pt-1">
+                              <td colSpan={5} className="px-3 pb-2 pt-1">
                                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 px-3 py-2.5">
                                   <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-none" />
                                   <p className="text-xs text-amber-700 dark:text-amber-400 leading-snug">

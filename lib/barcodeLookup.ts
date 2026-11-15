@@ -55,6 +55,81 @@ export function matchVariantByCode<T extends { metadata?: any }>(products: T[], 
 /** The part of a generated label code after the product code — same rule as generateVariantBarcodes (components/SizeVariantGrid). */
 export const variantSuffix = (key: string) => String(key ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+/** A variant's key exactly as billing and the grids build it: "Colour / Size", or just the size when there is no colour. */
+export function variantRowKey(v: { color?: any; size?: any }): string {
+  const color = String(v?.color ?? '').trim();
+  const size = String(v?.size ?? '').trim();
+  return color ? `${color} / ${size}` : size;
+}
+
+/**
+ * The product code variant labels are built from: the shop's own company barcode when it typed one, otherwise PRD-<id8>
+ * (the same rule the Barcode screen uses, so a label printed from there and a code saved here are identical).
+ */
+export function variantCodeBase(p: { id?: any; barcode?: string | null }): string {
+  const own = String(p.barcode ?? '').trim();
+  const base = own && !/^(prd|bar)-/i.test(own) ? own : `PRD-${String(p.id ?? '').slice(0, 8)}`;
+  return base.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+}
+
+/** The barcode saved for one variant row of a product (row.barcode, else metadata.size_prices), or ''. */
+export function savedVariantBarcode(p: { metadata?: any }, row: { color?: any; size?: any; barcode?: any }): string {
+  const own = String(row?.barcode ?? '').trim();
+  if (own) return own;
+  const sp = parseMeta(p?.metadata)?.size_prices;
+  return String(sp?.[variantRowKey(row)]?.barcode ?? '').trim();
+}
+
+/**
+ * Gives every variant of a product its own barcode and stores it in BOTH places the app reads it from — variants[i].barcode
+ * (shown in the product form) and metadata.size_prices[key].barcode (print, billing scan, search). A code that is already
+ * saved (or was printed earlier) is NEVER changed: incoming row, incoming metadata, then what the product had before. Only a
+ * missing / shared 'PRD-NEW-…' placeholder gets a fresh deterministic code `<product code>-<variant>`, unique within the product.
+ */
+export function ensureVariantBarcodes(input: {
+  id: string;
+  barcode?: string | null;
+  variants: any[];
+  metadata?: any;
+  previous?: { variants?: any; metadata?: any };
+}): { variants: any[]; metadata: any; changed: boolean } {
+  const base = variantCodeBase({ id: input.id, barcode: input.barcode });
+  const meta = { ...parseMeta(input.metadata) };
+  const sp: Record<string, any> = { ...(meta.size_prices && typeof meta.size_prices === 'object' ? meta.size_prices : {}) };
+  const prevSp = parseMeta(input.previous?.metadata)?.size_prices || {};
+  const prevByKey = new Map<string, string>();
+  for (const r of Array.isArray(input.previous?.variants) ? input.previous!.variants : []) {
+    const c = String(r?.barcode ?? '').trim();
+    if (c) prevByKey.set(variantRowKey(r), c);
+  }
+  const usable = (c: unknown) => { const t = String(c ?? '').trim(); return t && !isPlaceholderCode(t) ? t : ''; };
+
+  const rows = (input.variants || []).map((r) => ({ ...r }));
+  const used = new Set<string>();
+  const decided = rows.map((r) => {
+    const key = variantRowKey(r);
+    const code = usable(r.barcode) || usable(sp[key]?.barcode) || usable(prevByKey.get(key)) || usable(prevSp?.[key]?.barcode);
+    if (code) used.add(code.toUpperCase());
+    return code;
+  });
+
+  let changed = false;
+  rows.forEach((r, i) => {
+    const key = variantRowKey(r);
+    let code = decided[i];
+    if (!code) {
+      const stem = `${base}-${variantSuffix(key)}`;
+      code = stem;
+      for (let n = 2; used.has(code.toUpperCase()); n++) code = `${stem}-${n}`;
+      used.add(code.toUpperCase());
+    }
+    if (String(r.barcode ?? '').trim() !== code) { r.barcode = code; changed = true; }
+    if (String(sp[key]?.barcode ?? '').trim() !== code) { sp[key] = { ...(sp[key] || {}), barcode: code }; changed = true; }
+  });
+  if (rows.length) meta.size_prices = sp;
+  return { variants: rows, metadata: meta, changed };
+}
+
 /** The product's variant keys in the form billing's addToCart expects: size_variants keys, then variants[], then keys that carry a saved barcode. */
 export function variantKeysOf(p: { size_variants?: any; variants?: any; metadata?: any }): string[] {
   const keys: string[] = [];
@@ -63,9 +138,7 @@ export function variantKeysOf(p: { size_variants?: any; variants?: any; metadata
   if (sv && typeof sv === 'object') Object.keys(sv).forEach(add);
   if (Array.isArray(p?.variants)) {
     for (const v of p.variants) {
-      const color = v?.color ? String(v.color).trim() : '';
-      const size = v?.size ? String(v.size).trim() : '';
-      add(color && size ? `${color} / ${size}` : (size || color));
+      add(variantRowKey(v));
     }
   }
   variantBarcodes(p).forEach(([k]) => add(k));

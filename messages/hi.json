@@ -3989,6 +3989,7 @@
     "successDesc": "Our support team will get back to you shortly."
   },
   "ProductDetails": {
+    "barcode": "बारकोड",
     "loading": "लोड हो रहा है…",
     "noSku": "कोई SKU नहीं",
     "edit": "संपादित करें",

@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+import { ensureVariantBarcodes } from '@/lib/barcodeLookup';
 import prisma from '@/lib/server/prisma';
 import { requireShop } from '@/lib/server/auth';
 import { handle, json, readBody, ApiError } from '@/lib/server/http';
@@ -87,8 +89,13 @@ export const POST = handle(async (req) => {
       const cost = num(p.wholesaleCost) || num(p.costPrice) || num(first?.wholesalePrice) || num(first?.costPrice);
       const mrp = num(p.mrp) || num(first?.mrp);
       const stock = nv.hasVariants ? nv.currentStock! : num(p.stock);
+      const newId = randomUUID();
+      const newBarcode = p.barcode?.toString().trim() || `BAR-${Date.now()}-${i}`;
+      // Each variant is saved with its own barcode (see ensureVariantBarcodes), so print and billing scan agree.
+      const withCodes = nv.hasVariants ? ensureVariantBarcodes({ id: newId, barcode: newBarcode, variants: nv.variants }) : null;
       const created = await prisma.product.create({
         data: {
+          id: newId,
           shopId: shop.id,
           name,
           category: p.category || undefined,
@@ -96,14 +103,14 @@ export const POST = handle(async (req) => {
           hsnCode: p.hsnCode || undefined,
           gstPercent: p.gstPercent !== undefined && p.gstPercent !== '' ? num(p.gstPercent) : undefined,
           baseUnit: p.unit || p.baseUnit || undefined,
-          barcode: p.barcode?.toString().trim() || `BAR-${Date.now()}-${i}`,
+          barcode: newBarcode,
           sellingPrice: sellingPrice > 0 ? sellingPrice : undefined,
           wholesaleCost: cost > 0 ? cost : undefined,
           costPrice: cost > 0 ? cost : undefined,
           mrp: mrp > 0 ? mrp : undefined,
           minStock: p.minStock !== undefined && p.minStock !== '' ? num(p.minStock) : undefined,
           currentStock: stock,
-          ...(nv.hasVariants ? { variants: nv.variants as any, size_variants: nv.sizeVariantsJson, productType: 'variant' } : {}),
+          ...(withCodes ? { variants: withCodes.variants as any, metadata: withCodes.metadata, size_variants: nv.sizeVariantsJson, productType: 'variant' } : {}),
         },
       });
       if (stock > 0) {

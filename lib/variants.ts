@@ -316,9 +316,7 @@ export function barcodeVariantMap(product: any): Record<string, number> {
   if (product?.productType !== 'variant') return out;
   if (Array.isArray(product?.variants)) {
     for (const v of product.variants as Array<Record<string, unknown>>) {
-      const color = v.color ? String(v.color).trim() : '';
-      const size = v.size ? String(v.size).trim() : '';
-      const key = color && size ? makeVariantKey(color, size) : (size || color);
+      const key = variantKeyOf(v as { color?: string | null; size?: string | null });
       if (!key) continue;
       const stock = Number(v.stock ?? v.quantity ?? 0);
       if (stock > 0) out[key] = (out[key] || 0) + stock;
